@@ -1,0 +1,263 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Project Summary
+Description:
+This is an Electron-based desktop application aimed at providing a simple yet effective interface for downloading product images. The app accepts a CSV file (via drag-and-drop), validates its contents for required fields (shop domain and product id), and then uses Playwright to navigate to dynamically constructed product URLs. It downloads the corresponding product images, renaming and organizing them into folders based on the shop domain. A progress bar, done message, and control buttons (e.g., cancel, go back) provide real-time feedback and control over the process.
+
+Target Platforms:
+- macOS
+- Windows
+
+# Objectives
+Cross-Platform Compatibility: Deliver a consistent and reliable UI on both macOS and Windows.
+
+User-Friendly Interface: Ensure the UI is simple and intuitive with drag-and-drop CSV import, configurable input fields, and clear process indicators.
+
+Automated Image Retrieval: Use Playwright for browser automation to download product images by constructing URLs based on CSV data.
+
+Efficient Processing: Provide real-time progress updates and the ability to cancel ongoing tasks.
+
+Robust File Management: Automatically create directories (named after the shop domain) and organize downloaded images appropriately.
+
+# Requirements
+## Functional Requirements
+CSV Import and Validation:
+- Drag-and-drop support for CSV files.
+- Automatic CSV parsing to verify the existence of required fields: shop domain and product id.
+- If CSV columns are missing, allow the user to manually input these values.
+
+## UI Elements:
+- CSV Import Field: For dragging and dropping the CSV file.
+- Input Fields: For shop domain and product id in cases where the CSV does not include them.
+- Image Storage Field: Allowing users to choose the folder where images will be saved.
+- Start Button: Enabled only after a valid CSV has been imported.
+- Progress Bar: Visible once the download process starts, showing real-time progress.
+- Done Message: Displayed upon completion of the process.
+- Go Back to Home Button: Available after the process is completed.
+- Cancel Button: Displayed during processing to allow the user to abort the operation.
+
+## Processing Logic:
+- Loop through each row of the CSV.
+- Construct the URL using the shop domain and product id (e.g., https://{shop-domain}/{product_id}).
+- Use Playwright to navigate to the URL.
+- Search for an image tag with a src containing the product id appended with a random string and ending in .png or .jpg.
+- Download the image, rename it to product_id.png/product_id.jpg, and save it.
+- Place the image in a directory named after the shop domain (creating the folder if it doesn’t exist).
+- Continue until all rows are processed.
+- Non-Functional Requirements
+
+## Performance:
+- Quick response and real-time progress updates during image downloads.
+- Efficient handling of large CSV files and multiple downloads.
+
+## Usability:
+- A minimalistic, intuitive UI that minimizes the learning curve.
+- Clear user feedback on process states (import, processing, complete).
+
+## Scalability & Maintainability:
+- Modular code structure for ease of maintenance and future feature enhancements.
+- Use of modern development tools to support a scalable codebase.
+
+# System Architecture
+## Overall Architecture
+- The application is divided into two primary parts:
+  - Renderer Process (UI):
+    - Built using a modern JavaScript framework (React) bundled with Vite.
+    - Handles user interactions, file uploads, and progress display.
+    - Communicates with the main process via Electron’s IPC (Inter-Process Communication).
+  - Main Process (Backend/Processing):
+    - Manages file system operations (reading CSV, creating directories, saving images).
+    - Controls Playwright to perform browser automation tasks.
+    - Coordinates the overall processing workflow and relays status updates back to the renderer process.
+
+## Component Diagram
++--------------------------+
+|        Renderer UI       |
+|  (React + Vite)      |
+|                          |
+|  - CSV Import Component  |  
+|  - Input Field Component |
+|  - Progress & Status UI  |
++------------+-------------+
+             |  IPC
++------------v-------------+
+|       Main Process       |
+|    (Electron + Node.js)  |
+|                          |
+|  - CSV Parser Module     |
+|  - Playwright Controller |
+|  - File System Manager   |
++--------------------------+
+
+# Technology Stack
+- Electron: For building the cross-platform desktop application.
+- Vite: Modern build tool for a fast development experience.
+- JavaScript/TypeScript: For the primary application code (both frontend and backend).
+- UI Library: React for building dynamic UI components.
+- Playwright: For browser automation and image downloading.
+- Node.js: For backend operations including file system interactions and CSV parsing.
+- CSV Parsing Library: E.g., csv-parser or papaparse.
+
+# UI/UX Design
+Home Screen
+  - CSV Import Field:
+  - Drag-and-drop zone clearly marked.
+  - Feedback message upon file drop (e.g., “File uploaded successfully”).
+  - Manual Input Fields:
+    - Fields to manually specify shop domain and product id if absent from CSV.
+  - Image Storage Field:
+    - Input or file dialog button to select a folder for image storage.
+  - Start Button:
+    - Initially disabled and becomes enabled once a valid CSV is loaded.
+
+Processing Screen
+  - Progress Bar:
+    - Shows current progress as images are being downloaded.
+  - Cancel Button:
+    - Visible during processing, allowing the user to abort the operation.
+
+Completion Screen
+  - Done Message:
+    - Clear message indicating that the process has been completed.
+  - Go Back to Home Button:
+    - Provides a way for the user to reset the app and start a new session.
+
+# Detailed Functional Workflow
+## CSV Import:
+- The user drags and drops a CSV file.
+- The app parses the CSV and checks for required columns (shop domain and product id).
+- If columns are missing, the UI prompts for manual input.
+
+## User Configuration:
+- The user verifies or enters the shop domain and product id.
+- The user selects or enters the destination folder for storing images.
+
+## Process Initiation:
+- The start button is enabled once all inputs are valid.
+- On clicking “Start,” the app loops through each CSV row:
+- Extracts shop domain and product id.
+- Constructs the URL in the form of https://{shop-domain}/{product_id}.
+
+## Image Retrieval:
+- For each URL, Playwright launches a browser instance.
+- Searches the page for an image element with a src attribute matching the pattern product_id_randomstring.png/jpg.
+- Downloads the image and renames it to product_id.png/product_id.jpg.
+
+## File Organization:
+- Checks if a folder with the shop domain exists in the specified image storage path.
+- Creates the folder if it doesn’t exist.
+- Saves the downloaded image in the corresponding folder.
+
+## Progress Reporting:
+- Updates the progress bar based on the number of processed rows.
+- Provides real-time feedback through status messages.
+
+## Completion and Post-Processing:
+- Once all rows are processed, the app displays a “Done” message.
+- The “Go Back to Home” button is revealed for a fresh start.
+- The cancel button is hidden once processing completes.
+
+# Development Environment Setup
+- Repository Structure
+```
+/root
+│
+├── /src
+│   ├── /main           # Electron main process code
+│   │   ├── main.ts     # Application entry point
+│   │   └── ipcHandlers.ts  # IPC handlers and backend logic
+│   │
+│   ├── /renderer       # UI components
+│   │   ├── App.tsx     # Main React/Vue app component
+│   │   ├── CsvImporter.tsx  # CSV drag-and-drop component
+│   │   ├── Controls.tsx     # Input fields, buttons, and progress UI
+│   │   └── styles.css  # UI styling
+│   │
+│   ├── /utils          # Utility functions (CSV parsing, file operations, etc.)
+│   │   ├── csvParser.ts
+│   │   └── fileManager.ts
+│   │
+├── /assets             # Static assets like icons, images, etc.
+│
+├── package.json        # Project dependencies and scripts
+├── vite.config.js      # Vite configuration file
+└── README.md           # Project documentation
+```
+
+# Folder structure
+Folder Names: Always use camelCase (e.g. component1, component2, subcomponent1).
+Component Files: Always use PascalCase (e.g. Component1.tsx, Component2.tsx, SubComponent1.tsx, HelperComponent.tsx).
+
+Example Folder Structure
+```
+/src
+  /dashboard
+    ├── index.tsx                   // Dashboard main page
+    ├── components                  // Main components folder for dashboard (camelCase)
+    │   ├── index.ts                // Re-exports all dashboard components
+    │   ├── component1              // Component folder (camelCase)
+    │   │   ├── index.ts            // Re-exports Component1
+    │   │   ├── Component1.tsx      // Component file (PascalCase)
+    │   │   └── components          // Folder for subcomponents of Component1 (camelCase)
+    │   │       ├── index.ts        // Re-exports all subcomponents
+    │   │       └── subcomponent1    // Folder for a specific subcomponent (camelCase)
+    │   │           ├── index.ts    // Re-exports SubComponent1
+    │   │           └── SubComponent1.tsx  // Subcomponent file (PascalCase)
+    │   ├── component2              // Another component folder (camelCase)
+    │   │   ├── index.ts            // Re-exports Component2
+    │   │   └── Component2.tsx      // Component file (PascalCase)
+    │   └── HelperComponent.tsx     // A standalone helper component (PascalCase)
+```
+
+# Implementation Details
+## CSV Parsing & Validation
+- Use a CSV parsing library to read file contents.
+- Validate that the required fields (shop domain and product id) exist.
+- Provide error messages or prompt for manual input if validation fails.
+
+## IPC & Process Management
+IPC Communication:
+- Use Electron’s IPC to send commands from the renderer (UI) to the main process (backend).
+- Handle commands like start-processing, cancel-processing, and status updates.
+
+Playwright Controller:
+- Launch a Playwright browser instance per processing job.
+- Implement logic to search for the image tag and download the image.
+- Ensure cleanup of browser instances after each operation.
+- File System Operations
+  - Use Node.js fs module to:
+  - Create directories (if they don’t exist).
+  - Write downloaded images to disk.
+  - Rename files appropriately.
+- Error and Exception Handling
+- Implement try-catch blocks around:
+  - CSV parsing.
+  - Playwright browser interactions.
+  - File writing operations.
+- Provide clear user feedback in case of failures (e.g., invalid CSV format, download error).
+
+# Testing and Debugging
+Unit Testing
+Write tests for:
+- CSV parsing functions.
+- URL construction logic.
+- File system operations.
+- Integration Testing
+
+Test the complete workflow:
+- Import CSV.
+- Validate user inputs.
+- Process and download images.
+- Update UI based on progress.
+
+Manual Testing
+- Verify UI responsiveness on both macOS and Windows.
+- Test cancel functionality and error messages in different scenarios.
+
+Debugging Tools
+- Use Electron’s built-in developer tools to debug the renderer and main process.
+
+Implement logging (using a library like winston or simple console.log statements) to trace backend processes.
