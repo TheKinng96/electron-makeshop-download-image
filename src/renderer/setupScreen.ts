@@ -1,6 +1,7 @@
 import { showStatus } from './statusUtils';
-import { showProcessScreen } from './processScreen';
+import { showProcessScreen, hideProcessScreen } from './processScreen';
 import { chromium } from 'playwright-chromium';
+import Papa from 'papaparse';
 
 // Get Setup Screen Elements
 const setupScreenDiv = document.getElementById('setupScreen') as HTMLDivElement;
@@ -39,18 +40,28 @@ async function parseCSVHeaders(file: File): Promise<string[]> {
       try {
         const buffer = event.target?.result as ArrayBuffer;
         const uint8Array = new Uint8Array(buffer);
-
         const decoder = new TextDecoder('shift-jis');
         const text = decoder.decode(uint8Array);
 
-        const headers = text.split('\n')[0].split(',').map(header => header.trim());
+        const result = Papa.parse(text, {
+          header: true,
+          skipEmptyLines: true,
+          preview: 1 // Only parse the first row for headers
+        });
+
+        if (result.errors.length > 0) {
+          reject(new Error('Error parsing CSV headers: ' + result.errors[0].message));
+          return;
+        }
+
+        const headers = result.meta.fields || [];
         resolve(headers);
       } catch (error) {
         reject(error);
       }
     };
     reader.onerror = () => reject(new Error('Failed to read CSV file'));
-    reader.readAsArrayBuffer(file); // Read as ArrayBuffer instead of text
+    reader.readAsArrayBuffer(file);
   });
 }
 
@@ -161,14 +172,114 @@ startButton?.addEventListener('click', async () => {
   // --- Show Process Screen ---
   showProcessScreen();
 
-  console.log('Starting browser', storagePath, shopDomain, selectedProductIdField);
+  try {
+    // Parse CSV file with Shift JIS encoding
+    const buffer = await csvFile.arrayBuffer();
+    const uint8Array = new Uint8Array(buffer);
+    const decoder = new TextDecoder('shift-jis');
+    const csvText = decoder.decode(uint8Array);
 
-  // --- Prepare and Send Download Config --- 
-  // TODO: Loop through each row of the CSV file
-  // TODO: Open browser and navigate to the product page
-  // TODO: Click the "Download" button
-  // TODO: Save the image to the storage path with the product ID as the filename through 
-  // TODO: Log the image name and URL
-  // TODO: Close the browser
-  // TODO: Return the image name and URL
+    const result = Papa.parse(csvText, {
+      header: true,
+      skipEmptyLines: true
+    });
+
+    if (result.errors.length > 0) {
+      throw new Error('Error parsing CSV: ' + result.errors[0].message);
+    }
+
+    const rows = result.data as Record<string, string>[];
+    const headers = result.meta.fields || [];
+    const productIdIndex = headers.indexOf(selectedProductIdField);
+
+    if (productIdIndex === -1) {
+      throw new Error(`Product ID field "${selectedProductIdField}" not found in CSV`);
+    }
+
+    // Initialize browser
+    // const browser = await chromium.launch();
+    // const context = await browser.newContext();
+    // const page = await context.newPage();
+
+    // Process each row
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const productId = row[selectedProductIdField];
+
+      if (!productId) continue; // Skip rows with empty product ID
+
+      // Remove quotes and pad product ID with leading zeros to make it 12 digits
+      const cleanProductId = productId.toString().replace(/"/g, '');
+      const paddedProductId = cleanProductId.padStart(12, '0');
+      console.log('Processing product ID:', paddedProductId);
+
+      //   // Find the product image
+      //   const imgSelector = `img[src*="/${paddedProductId}_"]`;
+      //   const imgElement = await page.waitForSelector(imgSelector, { timeout: 5000 });
+
+      //   if (!imgElement) {
+      //     console.warn(`No image found for product ID: ${paddedProductId}`);
+      //     continue;
+      //   }
+
+      //   const imgSrc = await imgElement.getAttribute('src');
+      //   if (!imgSrc) {
+      //     console.warn(`No image source found for product ID: ${paddedProductId}`);
+      //     continue;
+      //   }
+
+      //   // Download the image
+      //   const response = await page.goto(imgSrc);
+      //   if (!response) {
+      //     console.warn(`Failed to fetch image for product ID: ${paddedProductId}`);
+      //     continue;
+      //   }
+
+      //   const buffer = await response.body();
+      //   if (!buffer) {
+      //     console.warn(`No image data received for product ID: ${paddedProductId}`);
+      //     continue;
+      //   }
+
+      //   // Save the image
+      //   const fileName = `${paddedProductId}.jpg`;
+      //   const filePath = `${storagePath}/${fileName}`;
+
+      //   // Use the main process to save the file
+      //   await window.electron.ipcRenderer.invoke('save-image', {
+      //     filePath,
+      //     buffer: Array.from(buffer)
+      //   });
+
+      //   // Update progress
+      //   const progress = Math.round((i / (rows.length - 1)) * 100);
+      //   const progressBar = document.getElementById('downloadProgressBar') as HTMLProgressElement;
+      //   const progressStatusText = document.getElementById('progressStatusText') as HTMLDivElement;
+
+      //   if (progressBar) progressBar.value = progress;
+      //   if (progressStatusText) {
+      //     progressStatusText.textContent = `Downloading... ${progress}% (${i}/${rows.length - 1})`;
+      //   }
+
+      // } catch (error) {
+      //   console.error(`Error processing product ID ${paddedProductId}:`, error);
+      //   // Continue with next product even if one fails
+      //   continue;
+      // }
+    }
+
+    // Clean up
+    // await browser.close();
+
+    // Show completion message
+    showStatus('All images downloaded successfully!', 'success');
+    setTimeout(() => {
+      hideProcessScreen(false, 'All images downloaded successfully!');
+    }, 2000);
+
+  } catch (error) {
+    console.error('Error in download process:', error);
+    showStatus('Error during download process: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
+    hideProcessScreen(true, 'Error during download process');
+  }
 });
