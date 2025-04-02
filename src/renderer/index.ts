@@ -9,6 +9,24 @@ const shopDomainInput = document.getElementById('shopDomain') as HTMLInputElemen
 const startButton = document.getElementById('startButton') as HTMLButtonElement;
 const cancelButton = document.getElementById('cancelButton') as HTMLButtonElement;
 const statusDiv = document.getElementById('status') as HTMLDivElement;
+const themeToggle = document.querySelector('.theme-controller') as HTMLInputElement;
+
+// Handle Theme Toggle
+if (themeToggle) {
+  themeToggle.addEventListener('change', (event) => {
+    const isChecked = (event.target as HTMLInputElement).checked;
+    if (isChecked) {
+      document.documentElement.setAttribute('data-theme', 'night');
+    } else {
+      document.documentElement.setAttribute('data-theme', 'emerald');
+    }
+  });
+
+  // Optional: Set initial theme based on toggle state on load 
+  // (Although data-theme="emerald" in HTML should handle the default)
+  // const currentTheme = themeToggle.checked ? 'night' : 'emerald';
+  // document.documentElement.setAttribute('data-theme', currentTheme);
+}
 
 // Handle CSV file selection
 csvFileInput.addEventListener('change', (event) => {

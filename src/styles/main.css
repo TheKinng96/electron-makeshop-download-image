@@ -2,6 +2,8 @@
 @tailwind components;
 @tailwind utilities;
 
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
 /* Custom styles for status messages */
 #status.success {
   @apply text-green-600 bg-green-50 p-4 rounded-md;
@@ -43,7 +45,8 @@ label {
   font-weight: 500;
 }
 
-input[type="text"], input[type="file"] {
+input[type='text'],
+input[type='file'] {
   width: 100%;
   padding: 10px;
   border: 1px solid #ddd;
@@ -69,7 +72,7 @@ button {
 }
 
 .primary-button {
-  background-color: #007AFF;
+  background-color: #007aff;
   color: white;
 }
 
@@ -103,4 +106,4 @@ button {
   background-color: #f8d7da;
   color: #721c24;
   border: 1px solid #f5c6cb;
-} 
+}

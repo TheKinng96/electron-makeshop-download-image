@@ -1,7 +1,13 @@
-export default {
-  content: ['./index.html', './src/**/*.{html,js,ts,jsx,tsx}'],
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {},
   },
-  plugins: [],
+  plugins: [require('daisyui')],
+  daisyui: {
+    themes: ['emerald', 'night'],
+    darkTheme: 'night',
+    darkMode: ['selector', '[data-theme="night"]'],
+  },
 };
