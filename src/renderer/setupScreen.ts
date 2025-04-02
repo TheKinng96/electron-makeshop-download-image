@@ -128,7 +128,7 @@ csvFileInput?.addEventListener('change', async (event) => {
 browseButton?.addEventListener('click', async () => {
   if (!storagePathInput || !statusDiv) return;
   try {
-    const selectedPath = await window.electron.ipcRenderer.invoke('select-storage-path');
+    const selectedPath = await (window as any).electronAPI.selectFolder();
     if (selectedPath) {
       storagePathInput.value = selectedPath;
       statusDiv.classList.add('hidden'); // Hide status on success
