@@ -1,5 +1,6 @@
 import '../styles/main.css';
 import { DownloadConfig, DownloadStatus } from '../types';
+import { showStatus } from './statusUtils';
 
 // Get DOM elements
 const csvFileInput = document.getElementById('csvFile') as HTMLInputElement;
@@ -8,25 +9,6 @@ const browseButton = document.getElementById('browseButton') as HTMLButtonElemen
 const shopDomainInput = document.getElementById('shopDomain') as HTMLInputElement;
 const startButton = document.getElementById('startButton') as HTMLButtonElement;
 const cancelButton = document.getElementById('cancelButton') as HTMLButtonElement;
-const statusDiv = document.getElementById('status') as HTMLDivElement;
-const themeToggle = document.querySelector('.theme-controller') as HTMLInputElement;
-
-// Handle Theme Toggle
-if (themeToggle) {
-  themeToggle.addEventListener('change', (event) => {
-    const isChecked = (event.target as HTMLInputElement).checked;
-    if (isChecked) {
-      document.documentElement.setAttribute('data-theme', 'night');
-    } else {
-      document.documentElement.setAttribute('data-theme', 'emerald');
-    }
-  });
-
-  // Optional: Set initial theme based on toggle state on load 
-  // (Although data-theme="emerald" in HTML should handle the default)
-  // const currentTheme = themeToggle.checked ? 'night' : 'emerald';
-  // document.documentElement.setAttribute('data-theme', currentTheme);
-}
 
 // Handle CSV file selection
 csvFileInput.addEventListener('change', (event) => {
@@ -99,15 +81,3 @@ cancelButton.addEventListener('click', () => {
   shopDomainInput.value = '';
   showStatus('Operation cancelled', 'success');
 });
-
-// Helper function to show status messages
-function showStatus(message: string, type: 'success' | 'error') {
-  statusDiv.textContent = message;
-  statusDiv.className = `alert ${type === 'success' ? 'alert-success' : 'alert-error'} mt-4`;
-  statusDiv.classList.remove('hidden');
-
-  // Hide status after 5 seconds
-  setTimeout(() => {
-    statusDiv.classList.add('hidden');
-  }, 5000);
-} 
