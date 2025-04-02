@@ -14,7 +14,6 @@ const startButton = document.getElementById('startButton') as HTMLButtonElement;
 const statusDiv = document.getElementById('status') as HTMLDivElement;
 
 async function setDefaultStoragePath() {
-  console.log('Setting default storage path', window);
   const defaultPath = await (window as any).electronAPI.getDefaultFolder();
 
   if (storagePathInput) {

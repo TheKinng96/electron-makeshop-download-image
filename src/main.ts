@@ -52,7 +52,6 @@ ipcMain.handle('select-storage-path', async () => {
       defaultPath: desktopPath
     });
 
-    console.log('Result', result);
     if (!result.canceled && result.filePaths.length > 0) {
       return result.filePaths[0];
     }

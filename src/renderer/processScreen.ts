@@ -22,10 +22,9 @@ export function showProcessScreen() {
   downloadProgressBar.value = 0;
   progressStatusText.textContent = 'Download starting...';
 
-  // --- Placeholder Progress Simulation ---
   let currentProgress = 0;
   progressInterval = window.setInterval(() => {
-    currentProgress += 10; // Increment progress
+    currentProgress += 10;
     if (currentProgress > 100) {
       currentProgress = 100;
       if (progressInterval) clearInterval(progressInterval);
