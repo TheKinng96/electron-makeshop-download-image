@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { DownloadConfig } from '../types';
+import { DownloadConfig } from './types';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -12,7 +12,7 @@ const createWindow = (): void => {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
-      preload: path.join(__dirname, '../preload/index.js')
+      preload: path.join(__dirname, 'preload.js')
     }
   });
 
@@ -40,13 +40,19 @@ app.on('activate', () => {
   }
 });
 
-// Handle storage path selection
+ipcMain.handle('get-default-folder', () => {
+  return app.getPath('desktop');
+});
+
 ipcMain.handle('select-storage-path', async () => {
   try {
+    const desktopPath = app.getPath('desktop');
     const result = await dialog.showOpenDialog(mainWindow!, {
-      properties: ['openDirectory', 'createDirectory']
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: desktopPath
     });
 
+    console.log('Result', result);
     if (!result.canceled && result.filePaths.length > 0) {
       return result.filePaths[0];
     }

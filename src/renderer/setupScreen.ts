@@ -13,17 +13,34 @@ const shopDomainInput = document.getElementById('shopDomain') as HTMLInputElemen
 const startButton = document.getElementById('startButton') as HTMLButtonElement;
 const statusDiv = document.getElementById('status') as HTMLDivElement;
 
+async function setDefaultStoragePath() {
+  console.log('Setting default storage path', window);
+  const defaultPath = await (window as any).electronAPI.getDefaultFolder();
+
+  if (storagePathInput) {
+    storagePathInput.value = defaultPath;
+  }
+
+  // When the "Browse" button is clicked, open the folder picker
+  document.getElementById('browseButton').addEventListener('click', async () => {
+    const folderPath = await (window as any).electronAPI.selectFolder();
+    if (folderPath && storagePathInput) {
+      storagePathInput.value = folderPath;
+    }
+  });
+}
+
+setDefaultStoragePath();
+
 // Function to parse CSV headers with Shift JIS encoding
 async function parseCSVHeaders(file: File): Promise<string[]> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
-        // Convert ArrayBuffer to Uint8Array for Shift JIS decoding
         const buffer = event.target?.result as ArrayBuffer;
         const uint8Array = new Uint8Array(buffer);
 
-        // Create a TextDecoder for Shift JIS
         const decoder = new TextDecoder('shift-jis');
         const text = decoder.decode(uint8Array);
 
