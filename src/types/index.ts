@@ -1,7 +1,7 @@
-export interface DownloadConfig {
-  csvFile: File;
+export interface StoreConfig {
+  image: string;
+  productId: string;
   storagePath: string;
-  shopDomain: string;
 }
 
 export interface DownloadStatus {

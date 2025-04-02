@@ -1,6 +1,6 @@
-import { DownloadConfig, DownloadStatus } from 'src/types';
 import { showStatus } from './statusUtils';
 import { showProcessScreen } from './processScreen';
+import { chromium } from 'playwright-chromium';
 
 // Get Setup Screen Elements
 const setupScreenDiv = document.getElementById('setupScreen') as HTMLDivElement;
@@ -161,27 +161,14 @@ startButton?.addEventListener('click', async () => {
   // --- Show Process Screen ---
   showProcessScreen();
 
-  // --- Prepare and Send Download Config --- 
-  // Note: Actual download start logic is now likely initiated
-  // after showProcessScreen, potentially involving IPC communication
-  // to the main process which would then send back progress updates.
-  // The placeholder progress starts automatically in showProcessScreen.
+  console.log('Starting browser', storagePath, shopDomain, selectedProductIdField);
 
-  // Example: If you still need to send the config to main process
-  // const config: DownloadConfig = {
-  //   csvFilePath: csvFile.path, // Need file path for main process
-  //   storagePath,
-  //   shopDomain,
-  //   productIdField: selectedProductIdField
-  // };
-  // try {
-  //   // Invoke the main process to START the download
-  //   await window.electron.ipcRenderer.invoke('start-download', config);
-  //   // Main process should now handle the download and send progress updates
-  //   // (e.g., via 'download-progress' channel)
-  // } catch (error) {
-  //   console.error('Error invoking start-download:', error);
-  //   showStatus('Error initiating download process', 'error');
-  //   hideProcessScreen(true); // Hide process screen on initiation error
-  // }
+  // --- Prepare and Send Download Config --- 
+  // TODO: Loop through each row of the CSV file
+  // TODO: Open browser and navigate to the product page
+  // TODO: Click the "Download" button
+  // TODO: Save the image to the storage path with the product ID as the filename through 
+  // TODO: Log the image name and URL
+  // TODO: Close the browser
+  // TODO: Return the image name and URL
 });

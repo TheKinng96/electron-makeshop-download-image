@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { DownloadConfig } from './types';
+import { DownloadConfig, StoreConfig } from './types';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -63,9 +63,9 @@ ipcMain.handle('select-storage-path', async () => {
 });
 
 // Handle file download process
-ipcMain.handle('start-download', async (event, config: DownloadConfig) => {
+ipcMain.handle('store-image', async (event, config: StoreConfig) => {
   try {
-    const { storagePath, shopDomain } = config;
+    const { storagePath } = config;
 
     // Create storage directory if it doesn't exist
     await fs.mkdir(storagePath, { recursive: true });
