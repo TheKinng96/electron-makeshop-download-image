@@ -1,6 +1,7 @@
 import { showStatus } from './statusUtils';
 import { showProcessScreen, hideProcessScreen } from './processScreen';
-import { _electron as chromium } from 'playwright-chromium';
+import type { Browser } from 'puppeteer';
+import puppeteer from 'puppeteer';
 import Papa from 'papaparse';
 
 // Get Setup Screen Elements
@@ -188,95 +189,33 @@ startButton?.addEventListener('click', async () => {
       throw new Error('Error parsing CSV: ' + result.errors[0].message);
     }
 
-    const rows = result.data as Record<string, string>[];
-    const headers = result.meta.fields || [];
-    const productIdIndex = headers.indexOf(selectedProductIdField);
+    // Set up progress listener
+    window.electronAPI.onDownloadProgress((event: any, data: { progress: number, current: number, total: number }) => {
+      const progressBar = document.getElementById('downloadProgressBar') as HTMLProgressElement;
+      const progressStatusText = document.getElementById('progressStatusText') as HTMLDivElement;
 
-    if (productIdIndex === -1) {
-      throw new Error(`Product ID field "${selectedProductIdField}" not found in CSV`);
+      if (progressBar) progressBar.value = data.progress;
+      if (progressStatusText) {
+        progressStatusText.textContent = `Downloading... ${data.progress}% (${data.current}/${data.total})`;
+      }
+    });
+
+    // Start the download process
+    const response = await (window as any).electronAPI.downloadImages({
+      csvData: result.data,
+      shopDomain,
+      storagePath,
+      selectedProductIdField
+    });
+
+    if (response.success) {
+      showStatus('All images downloaded successfully!', 'success');
+      setTimeout(() => {
+        hideProcessScreen(false, 'All images downloaded successfully!');
+      }, 2000);
+    } else {
+      throw new Error(response.message);
     }
-
-    // Initialize browser
-    console.log('Initializing browser');
-    // const browser = await chromium.launch();
-    // const context = await browser.newContext();
-    // const page = await context.newPage();
-
-    // Process each row
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const productId = row[selectedProductIdField];
-
-      if (!productId) continue; // Skip rows with empty product ID
-
-      // Remove quotes and pad product ID with leading zeros to make it 12 digits
-      const cleanProductId = productId.toString().replace(/"/g, '');
-      const paddedProductId = cleanProductId.padStart(12, '0');
-      console.log('Processing product ID:', paddedProductId);
-
-      //   // Find the product image
-      //   const imgSelector = `img[src*="/${paddedProductId}_"]`;
-      //   const imgElement = await page.waitForSelector(imgSelector, { timeout: 5000 });
-
-      //   if (!imgElement) {
-      //     console.warn(`No image found for product ID: ${paddedProductId}`);
-      //     continue;
-      //   }
-
-      //   const imgSrc = await imgElement.getAttribute('src');
-      //   if (!imgSrc) {
-      //     console.warn(`No image source found for product ID: ${paddedProductId}`);
-      //     continue;
-      //   }
-
-      //   // Download the image
-      //   const response = await page.goto(imgSrc);
-      //   if (!response) {
-      //     console.warn(`Failed to fetch image for product ID: ${paddedProductId}`);
-      //     continue;
-      //   }
-
-      //   const buffer = await response.body();
-      //   if (!buffer) {
-      //     console.warn(`No image data received for product ID: ${paddedProductId}`);
-      //     continue;
-      //   }
-
-      //   // Save the image
-      //   const fileName = `${paddedProductId}.jpg`;
-      //   const filePath = `${storagePath}/${fileName}`;
-
-      //   // Use the main process to save the file
-      //   await window.electron.ipcRenderer.invoke('save-image', {
-      //     filePath,
-      //     buffer: Array.from(buffer)
-      //   });
-
-      //   // Update progress
-      //   const progress = Math.round((i / (rows.length - 1)) * 100);
-      //   const progressBar = document.getElementById('downloadProgressBar') as HTMLProgressElement;
-      //   const progressStatusText = document.getElementById('progressStatusText') as HTMLDivElement;
-
-      //   if (progressBar) progressBar.value = progress;
-      //   if (progressStatusText) {
-      //     progressStatusText.textContent = `Downloading... ${progress}% (${i}/${rows.length - 1})`;
-      //   }
-
-      // } catch (error) {
-      //   console.error(`Error processing product ID ${paddedProductId}:`, error);
-      //   // Continue with next product even if one fails
-      //   continue;
-      // }
-    }
-
-    // Clean up
-    // await browser.close();
-
-    // Show completion message
-    showStatus('All images downloaded successfully!', 'success');
-    setTimeout(() => {
-      hideProcessScreen(false, 'All images downloaded successfully!');
-    }, 2000);
 
   } catch (error) {
     console.error('Error in download process:', error);
