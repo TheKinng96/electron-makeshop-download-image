@@ -1,6 +1,6 @@
 import { showStatus } from './statusUtils';
 import { showProcessScreen, hideProcessScreen } from './processScreen';
-import { chromium } from 'playwright-chromium';
+import { _electron as chromium } from 'playwright-chromium';
 import Papa from 'papaparse';
 
 // Get Setup Screen Elements
@@ -197,6 +197,7 @@ startButton?.addEventListener('click', async () => {
     }
 
     // Initialize browser
+    console.log('Initializing browser');
     // const browser = await chromium.launch();
     // const context = await browser.newContext();
     // const page = await context.newPage();

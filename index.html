@@ -2,51 +2,51 @@
 <html data-theme="emerald">
   <head>
     <meta charset="UTF-8" />
-    <title>Image Downloader</title>
+    <title>Makeshop画像ダウンローダー</title>
   </head>
   <body class="min-h-screen p-4 bg-base-200">
     <div class="card max-w-3xl mx-auto bg-base-100 p-4 shadow-xl">
-      <h1 class="text-3xl font-bold mb-6">Image Downloader</h1>
+      <h1 class="text-3xl font-bold mb-6">Makeshop画像ダウンローダー</h1>
 
       <!-- Setup Screen -->
       <div id="setupScreen">
         <div class="mb-4">
-          <label for="csvFile" class="block text-sm font-medium mb-1">Import CSV File</label>
+          <label for="csvFile" class="block text-sm font-medium mb-1">CSVをインポート</label>
           <input type="file" id="csvFile" accept=".csv" class="file-input file-input-bordered w-full" />
         </div>
 
         <div id="productIdFieldContainer" class="mb-4 hidden">
-          <label for="productIdField" class="block text-sm font-medium mb-1">Product ID Field</label>
+          <label for="productIdField" class="block text-sm font-medium mb-1">商品IDフィールド</label>
           <select id="productIdField" class="select select-bordered w-full" disabled>
-            <option value="">Select a field</option>
+            <option value="">選択してください</option>
           </select>
         </div>
 
         <div class="mb-4">
-          <label for="storagePath" class="block text-sm font-medium mb-1">Storage Path</label>
+          <label for="storagePath" class="block text-sm font-medium mb-1">保存先</label>
           <div class="flex gap-2">
             <input type="text" id="storagePath" readonly class="input input-bordered flex-1 bg-base-200" />
-            <button id="browseButton" class="btn">Browse</button>
+            <button id="browseButton" class="btn">ブラウズ</button>
           </div>
         </div>
 
         <div class="mb-4">
-          <label for="shopDomain" class="block text-sm font-medium mb-1">Shop Domain</label>
+          <label for="shopDomain" class="block text-sm font-medium mb-1">ショップURL</label>
           <input type="text" id="shopDomain" placeholder="e.g., corekara.co.jp" class="input input-bordered w-full" />
         </div>
 
         <div class="flex justify-end gap-2 mt-6">
           <!-- Note: Original Cancel button removed as per request -->
-          <button id="startButton" class="btn btn-primary">Start Download</button>
+          <button id="startButton" class="btn btn-primary">ダウンロード開始</button>
         </div>
       </div>
 
       <!-- Process Screen (Initially Hidden) -->
       <div id="processScreen" class="hidden">
-        <div id="progressStatusText" class="mb-2 text-center">Starting download...</div>
+        <div id="progressStatusText" class="mb-2 text-center">ダウンロード中...</div>
         <progress id="downloadProgressBar" class="progress progress-primary w-full mb-4" value="0" max="100"></progress>
         <div class="flex justify-end">
-          <button id="cancelProcessButton" class="btn btn-error">Cancel Download</button>
+          <button id="cancelProcessButton" class="btn btn-error">キャンセル</button>
         </div>
       </div>
 
