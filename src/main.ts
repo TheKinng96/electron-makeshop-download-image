@@ -7,6 +7,17 @@ import puppeteer, { Browser } from 'puppeteer';
 let mainWindow: BrowserWindow | null = null;
 process.env.ELECTRON_ENABLE_LOGGING = '1';
 
+// Function to extract domain name from URL
+function extractDomainName(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch (error) {
+    console.error('Error extracting domain name:', error);
+    return 'unknown-domain';
+  }
+}
+
 const createWindow = (): void => {
   mainWindow = new BrowserWindow({
     width: 900,
@@ -38,7 +49,6 @@ app.whenReady().then(() => {
   });
 
   ipcMain.handle('select-storage-path', async () => {
-    console.log('here')
     try {
       const desktopPath = app.getPath('desktop');
       const result = await dialog.showOpenDialog(mainWindow!, {
@@ -80,11 +90,18 @@ app.whenReady().then(() => {
       throw new Error(`Product ID field "${selectedProductIdField}" not found in CSV`);
     }
 
-    // Extract the URL pattern from the sample URL
+    // Extract the URL pattern and domain name from the sample URL
     const urlPattern = sampleUrl.replace(/\d{12}/, '{productId}');
+    const domainName = extractDomainName(sampleUrl);
+    const domainFolderPath = path.join(storagePath, domainName);
+
     console.log('Using URL pattern:', urlPattern);
+    console.log('Using domain folder:', domainFolderPath);
 
     try {
+      // Create domain folder if it doesn't exist
+      await fs.mkdir(domainFolderPath, { recursive: true });
+
       // Initialize browser
       console.log('Initializing browser');
       browser = await puppeteer.launch({
@@ -158,7 +175,7 @@ app.whenReady().then(() => {
 
             // Save the image with a filename that includes the product ID and suffix
             const fileName = `${paddedProductId}_${suffix}.jpg`;
-            const filePath = path.join(storagePath, fileName);
+            const filePath = path.join(domainFolderPath, fileName);
             await fs.writeFile(filePath, buffer);
 
             // Optionally send progress update to the renderer
@@ -178,7 +195,7 @@ app.whenReady().then(() => {
 
       return {
         success: true,
-        message: 'All images downloaded successfully!'
+        message: `All images downloaded successfully to ${domainName} folder!`
       };
 
     } catch (error) {
