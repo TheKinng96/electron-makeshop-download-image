@@ -5,6 +5,7 @@ import { StoreConfig, DownloadParams, DownloadStatus } from './types';
 import puppeteer, { Browser } from 'puppeteer';
 
 let mainWindow: BrowserWindow | null = null;
+process.env.ELECTRON_ENABLE_LOGGING = '1';
 
 const createWindow = (): void => {
   mainWindow = new BrowserWindow({
@@ -70,7 +71,7 @@ app.whenReady().then(() => {
   // Handle file download process
   ipcMain.handle('download-images', async (event, params: DownloadParams): Promise<DownloadStatus> => {
     let browser: Browser | null = null;
-    const { csvData, shopDomain, storagePath, selectedProductIdField } = params;
+    const { csvData, sampleUrl, storagePath, selectedProductIdField } = params;
     const rows = csvData as Record<string, string>[];
     const headers = Object.keys(rows[0] || {});
     const productIdIndex = headers.indexOf(selectedProductIdField);
@@ -78,6 +79,10 @@ app.whenReady().then(() => {
     if (productIdIndex === -1) {
       throw new Error(`Product ID field "${selectedProductIdField}" not found in CSV`);
     }
+
+    // Extract the URL pattern from the sample URL
+    const urlPattern = sampleUrl.replace(/\d{12}/, '{productId}');
+    console.log('Using URL pattern:', urlPattern);
 
     try {
       // Initialize browser
@@ -101,50 +106,69 @@ app.whenReady().then(() => {
           const paddedProductId = cleanProductId.padStart(12, '0');
           console.log('Processing product ID:', paddedProductId);
 
-          // Navigate to the product page
-          const url = `https://www.${shopDomain}/shopdetail/${paddedProductId}`;
+          // Navigate to the product page using the URL pattern
+          const url = urlPattern.replace('{productId}', paddedProductId);
+          console.log('Navigating to:', url);
           await page.goto(url, { waitUntil: 'networkidle0' });
 
           // Find the product image
-          const imgSelector = `img[src*="/${paddedProductId}_"]`;
-          const imgElement = await page.waitForSelector(imgSelector, { timeout: 5000 });
+          const imgSelector = 'img[src*="itemimages"]';
 
-          if (!imgElement) {
-            console.warn(`No image found for product ID: ${paddedProductId}`);
+          // Get all matching image elements
+          const imgElements = await page.$$(imgSelector);
+
+          if (!imgElements || imgElements.length === 0) {
+            console.warn(`No images found for product ID: ${paddedProductId}`);
             continue;
           }
 
-          const imgSrc = await imgElement.evaluate((el: Element) => el.getAttribute('src'));
-          if (!imgSrc) {
-            console.warn(`No image source found for product ID: ${paddedProductId}`);
-            continue;
+          // Loop over all found images
+          for (const [idx, imgElement] of imgElements.entries()) {
+            // Get the src attribute of the image
+            const imgSrc = await imgElement.evaluate((el) => el.getAttribute('src'));
+            if (!imgSrc) {
+              console.warn(`No image source found for product ID: ${paddedProductId}`);
+              continue;
+            }
+
+            // Check that the src contains "itemimages"
+            if (!imgSrc.includes('itemimages')) {
+              console.warn(`Image source does not contain 'itemimages': ${imgSrc}`);
+              continue;
+            }
+
+            // Extract the suffix from the image filename using regex.
+            // This regex captures the part after the paddedProductId and underscore, before .jpg.
+            const regex = new RegExp(`${paddedProductId}_(\\w+)\\.jpg`);
+            const match = imgSrc.match(regex);
+            const suffix = match && match[1] ? match[1] : idx; // fallback to index if suffix not found
+
+            // Download the image by navigating to the URL
+            const response = await page.goto(imgSrc);
+            if (!response) {
+              console.warn(`Failed to fetch image for product ID: ${paddedProductId}`);
+              continue;
+            }
+
+            const buffer = await response.buffer();
+            if (!buffer) {
+              console.warn(`No image data received for product ID: ${paddedProductId}`);
+              continue;
+            }
+
+            // Save the image with a filename that includes the product ID and suffix
+            const fileName = `${paddedProductId}_${suffix}.jpg`;
+            const filePath = path.join(storagePath, fileName);
+            await fs.writeFile(filePath, buffer);
+
+            // Optionally send progress update to the renderer
+            const progress = Math.round((i / (rows.length - 1)) * 100);
+            mainWindow?.webContents.send('download-progress', {
+              progress,
+              current: i,
+              total: rows.length - 1
+            });
           }
-
-          // Download the image
-          const response = await page.goto(imgSrc);
-          if (!response) {
-            console.warn(`Failed to fetch image for product ID: ${paddedProductId}`);
-            continue;
-          }
-
-          const buffer = await response.buffer();
-          if (!buffer) {
-            console.warn(`No image data received for product ID: ${paddedProductId}`);
-            continue;
-          }
-
-          // Save the image
-          const fileName = `${paddedProductId}.jpg`;
-          const filePath = path.join(storagePath, fileName);
-          await fs.writeFile(filePath, buffer);
-
-          // Send progress update to renderer
-          const progress = Math.round((i / (rows.length - 1)) * 100);
-          mainWindow?.webContents.send('download-progress', {
-            progress,
-            current: i,
-            total: rows.length - 1
-          });
 
         } catch (error) {
           console.error(`Error processing product ID ${productId}:`, error);

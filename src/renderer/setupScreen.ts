@@ -146,7 +146,7 @@ startButton?.addEventListener('click', async () => {
 
   const csvFile = csvFileInput.files?.[0];
   const storagePath = storagePathInput.value;
-  const shopDomain = shopDomainInput.value;
+  const sampleUrl = shopDomainInput.value;  // We'll keep the variable name for now
   const selectedProductIdField = productIdField.value;
 
   // --- Input Validation ---
@@ -162,8 +162,14 @@ startButton?.addEventListener('click', async () => {
     showStatus('Please select a storage path', 'error');
     return;
   }
-  if (!shopDomain) {
-    showStatus('Please enter a shop domain', 'error');
+  if (!sampleUrl) {
+    showStatus('Please enter a sample product URL', 'error');
+    return;
+  }
+
+  // Validate that the sample URL contains a 12-digit product ID
+  if (!/\d{12}/.test(sampleUrl)) {
+    showStatus('Sample URL must contain a 12-digit product ID', 'error');
     return;
   }
 
@@ -201,9 +207,9 @@ startButton?.addEventListener('click', async () => {
     });
 
     // Start the download process
-    const response = await (window as any).electronAPI.downloadImages({
+    const response = await window.electronAPI.downloadImages({
       csvData: result.data,
-      shopDomain,
+      sampleUrl,
       storagePath,
       selectedProductIdField
     });

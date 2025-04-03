@@ -12,7 +12,7 @@ export interface DownloadProgress {
 
 export interface DownloadParams {
   csvData: any[];
-  shopDomain: string;
+  sampleUrl: string;
   storagePath: string;
   selectedProductIdField: string
 }
