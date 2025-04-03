@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { StoreConfig, DownloadParams, DownloadStatus } from './types';
+import { StoreConfig, DownloadParams, DownloadStatus, SingleImageParams } from './types';
 import puppeteer, { Browser } from 'puppeteer';
 
 let mainWindow: BrowserWindow | null = null;
@@ -15,6 +15,74 @@ function extractDomainName(url: string): string {
   } catch (error) {
     console.error('Error extracting domain name:', error);
     return 'unknown-domain';
+  }
+}
+
+// Function to download images for a single product
+async function downloadProductImages(
+  browser: Browser,
+  params: SingleImageParams
+): Promise<{ success: boolean; message: string }> {
+  const { url, productId, domainFolderPath } = params;
+  const page = await browser.newPage();
+
+  try {
+    console.log('Navigating to:', url);
+    await page.goto(url, { waitUntil: 'networkidle0' });
+
+    // Find the product image
+    const imgSelector = 'img[src*="itemimages"]';
+
+    // Get all matching image elements
+    const imgElements = await page.$$(imgSelector);
+
+    if (!imgElements || imgElements.length === 0) {
+      console.warn(`No images found for product ID: ${productId}`);
+      return { success: false, message: `No images found for product ID: ${productId}` };
+    }
+
+    // Loop over all found images
+    for (const [idx, imgElement] of imgElements.entries()) {
+      // Get the src attribute of the image
+      const imgSrc = await imgElement.evaluate((el) => el.getAttribute('src'));
+      if (!imgSrc) {
+        console.warn(`No image source found for product ID: ${productId}`);
+        continue;
+      }
+
+      // Check that the src contains "itemimages"
+      if (!imgSrc.includes('itemimages')) {
+        console.warn(`Image source does not contain 'itemimages': ${imgSrc}`);
+        continue;
+      }
+
+      // Extract the suffix from the image filename using regex.
+      const regex = new RegExp(`${productId}_(\\w+)\\.jpg`);
+      const match = imgSrc.match(regex);
+      const suffix = match && match[1] ? match[1] : idx;
+
+      // Download the image by navigating to the URL
+      const response = await page.goto(imgSrc);
+      if (!response) {
+        console.warn(`Failed to fetch image for product ID: ${productId}`);
+        continue;
+      }
+
+      const buffer = await response.buffer();
+      if (!buffer) {
+        console.warn(`No image data received for product ID: ${productId}`);
+        continue;
+      }
+
+      // Save the image with a filename that includes the product ID and suffix
+      const fileName = `${productId}_${suffix}.jpg`;
+      const filePath = path.join(domainFolderPath, fileName);
+      await fs.writeFile(filePath, buffer);
+    }
+
+    return { success: true, message: `Successfully downloaded images for product ID: ${productId}` };
+  } finally {
+    await page.close();
   }
 }
 
@@ -78,6 +146,22 @@ app.whenReady().then(() => {
     }
   });
 
+  // Handle single image download
+  ipcMain.handle('download-single-image', async (event, params: SingleImageParams): Promise<{ success: boolean; message: string }> => {
+    let browser: Browser | null = null;
+    try {
+      browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+      return await downloadProductImages(browser, params);
+    } finally {
+      if (browser) {
+        await browser.close();
+      }
+    }
+  });
+
   // Handle file download process
   ipcMain.handle('download-images', async (event, params: DownloadParams): Promise<DownloadStatus> => {
     let browser: Browser | null = null;
@@ -103,12 +187,10 @@ app.whenReady().then(() => {
       await fs.mkdir(domainFolderPath, { recursive: true });
 
       // Initialize browser
-      console.log('Initializing browser');
       browser = await puppeteer.launch({
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
       });
-      const page = await browser.newPage();
 
       // Process each row
       for (let i = 0; i < rows.length; i++) {
@@ -125,73 +207,47 @@ app.whenReady().then(() => {
 
           // Navigate to the product page using the URL pattern
           const url = urlPattern.replace('{productId}', paddedProductId);
-          console.log('Navigating to:', url);
-          await page.goto(url, { waitUntil: 'networkidle0' });
 
-          // Find the product image
-          const imgSelector = 'img[src*="itemimages"]';
+          // Send progress update before starting the download
+          const progress = Math.round((i / rows.length) * 100);
+          mainWindow?.webContents.send('download-progress', {
+            progress,
+            current: i,
+            total: rows.length
+          });
 
-          // Get all matching image elements
-          const imgElements = await page.$$(imgSelector);
+          // Download images for this product
+          const result = await downloadProductImages(browser!, {
+            url,
+            productId: paddedProductId,
+            domainFolderPath
+          });
 
-          if (!imgElements || imgElements.length === 0) {
-            console.warn(`No images found for product ID: ${paddedProductId}`);
-            continue;
+          if (!result.success) {
+            console.warn(result.message);
           }
 
-          // Loop over all found images
-          for (const [idx, imgElement] of imgElements.entries()) {
-            // Get the src attribute of the image
-            const imgSrc = await imgElement.evaluate((el) => el.getAttribute('src'));
-            if (!imgSrc) {
-              console.warn(`No image source found for product ID: ${paddedProductId}`);
-              continue;
-            }
-
-            // Check that the src contains "itemimages"
-            if (!imgSrc.includes('itemimages')) {
-              console.warn(`Image source does not contain 'itemimages': ${imgSrc}`);
-              continue;
-            }
-
-            // Extract the suffix from the image filename using regex.
-            // This regex captures the part after the paddedProductId and underscore, before .jpg.
-            const regex = new RegExp(`${paddedProductId}_(\\w+)\\.jpg`);
-            const match = imgSrc.match(regex);
-            const suffix = match && match[1] ? match[1] : idx; // fallback to index if suffix not found
-
-            // Download the image by navigating to the URL
-            const response = await page.goto(imgSrc);
-            if (!response) {
-              console.warn(`Failed to fetch image for product ID: ${paddedProductId}`);
-              continue;
-            }
-
-            const buffer = await response.buffer();
-            if (!buffer) {
-              console.warn(`No image data received for product ID: ${paddedProductId}`);
-              continue;
-            }
-
-            // Save the image with a filename that includes the product ID and suffix
-            const fileName = `${paddedProductId}_${suffix}.jpg`;
-            const filePath = path.join(domainFolderPath, fileName);
-            await fs.writeFile(filePath, buffer);
-
-            // Optionally send progress update to the renderer
-            const progress = Math.round((i / (rows.length - 1)) * 100);
-            mainWindow?.webContents.send('download-progress', {
-              progress,
-              current: i,
-              total: rows.length - 1
-            });
-          }
+          // Add a small delay to ensure UI updates are processed
+          await new Promise(resolve => setTimeout(resolve, 100));
 
         } catch (error) {
           console.error(`Error processing product ID ${productId}:`, error);
           continue;
         }
       }
+
+      // Send final progress update
+      mainWindow?.webContents.send('download-progress', {
+        progress: 100,
+        current: rows.length,
+        total: rows.length
+      });
+
+      // Send completion status
+      mainWindow?.webContents.send('download-complete', {
+        success: true,
+        message: `All images downloaded successfully to ${domainName} folder!`
+      });
 
       return {
         success: true,
@@ -200,6 +256,11 @@ app.whenReady().then(() => {
 
     } catch (error) {
       console.error('Error in download process:', error);
+      // Send error status
+      mainWindow?.webContents.send('download-complete', {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
       return {
         success: false,
         message: error instanceof Error ? error.message : 'Unknown error occurred'
@@ -214,6 +275,13 @@ app.whenReady().then(() => {
         }
       }
     }
+  });
+
+  // Handle download cancellation
+  ipcMain.on('cancel-download', () => {
+    console.log('Download cancellation requested');
+    // TODO: Implement actual cancellation logic
+    // For now, we'll just let the current process complete
   });
 });
 

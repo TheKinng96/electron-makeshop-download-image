@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { DownloadParams, DownloadProgress, StoreConfig } from './types';
+import { DownloadParams, DownloadProgress, StoreConfig, DownloadStatus } from './types';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getDefaultFolder: () => ipcRenderer.invoke('get-default-folder'),
@@ -10,4 +10,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('download-images', params),
   onDownloadProgress: (callback: (event: any, data: DownloadProgress) => void) =>
     ipcRenderer.on('download-progress', callback),
+  onDownloadComplete: (callback: (event: any, status: DownloadStatus) => void) =>
+    ipcRenderer.on('download-complete', callback),
+  cancelDownload: () => ipcRenderer.send('cancel-download'),
 });

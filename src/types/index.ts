@@ -17,6 +17,12 @@ export interface DownloadParams {
   selectedProductIdField: string
 }
 
+export interface SingleImageParams {
+  url: string;
+  productId: string;
+  domainFolderPath: string;
+}
+
 export interface DownloadStatus {
   success: boolean;
   message: string;
@@ -34,7 +40,10 @@ declare global {
       storeImage: (config: StoreConfig) => Promise<any>;
       getImage: (config: StoreConfig) => Promise<any>;
       downloadImages: (params: DownloadParams) => Promise<DownloadStatus>;
+      downloadSingleImage: (params: SingleImageParams) => Promise<{ success: boolean; message: string }>;
       onDownloadProgress: (callback: (event: any, data: DownloadProgress) => void) => void;
+      onDownloadComplete: (callback: (event: any, status: DownloadStatus) => void) => void;
+      cancelDownload: () => void;
     };
   }
 } 

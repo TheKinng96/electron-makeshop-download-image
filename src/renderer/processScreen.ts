@@ -8,11 +8,8 @@ const cancelProcessButton = document.getElementById('cancelProcessButton') as HT
 const setupScreenDiv = document.getElementById('setupScreen') as HTMLDivElement; // Needed to re-show setup
 const generalStatusDiv = document.getElementById('status') as HTMLDivElement; // For cancellation message
 
-// Placeholder for actual progress updates
-let progressInterval: number | null = null;
-
 /**
- * Shows the processing screen and starts the placeholder progress.
+ * Shows the processing screen and sets up progress listeners.
  */
 export function showProcessScreen() {
   if (!processScreenDiv || !setupScreenDiv || !downloadProgressBar || !progressStatusText) return;
@@ -22,22 +19,27 @@ export function showProcessScreen() {
   downloadProgressBar.value = 0;
   progressStatusText.textContent = 'Download starting...';
 
-  let currentProgress = 0;
-  progressInterval = window.setInterval(() => {
-    currentProgress += 10;
-    if (currentProgress > 100) {
-      currentProgress = 100;
-      if (progressInterval) clearInterval(progressInterval);
-      progressStatusText.textContent = 'Download completed!';
-      // TODO: Add logic to handle completion (e.g., show success in general status, hide process screen?)
-      // For now, just stops the progress bar
-      setTimeout(() => hideProcessScreen(true, 'Download placeholder finished successfully.'), 1000);
-    } else {
-      progressStatusText.textContent = `Downloading... ${currentProgress}%`;
+  // Set up progress listener
+  window.electronAPI.onDownloadProgress((event: any, data: any) => {
+    const { progress, current, total } = data;
+    downloadProgressBar.value = progress;
+    progressStatusText.textContent = `Downloading... ${progress}%`;
+    if (generalStatusDiv) {
+      generalStatusDiv.textContent = `Processing product ${current} of ${total}`;
     }
-    downloadProgressBar.value = currentProgress;
-  }, 500); // Update every 0.5 seconds
-  // --- End Placeholder --- 
+  });
+
+  // Set up completion listener
+  window.electronAPI.onDownloadComplete((event: any, status: any) => {
+    if (status.success) {
+      progressStatusText.textContent = 'Download completed!';
+      downloadProgressBar.value = 100;
+      setTimeout(() => hideProcessScreen(false, status.message), 1000);
+    } else {
+      progressStatusText.textContent = 'Download failed!';
+      setTimeout(() => hideProcessScreen(true, status.message), 1000);
+    }
+  });
 }
 
 /**
@@ -47,12 +49,6 @@ export function showProcessScreen() {
  */
 export function hideProcessScreen(cancelled: boolean = false, message?: string) {
   if (!processScreenDiv || !setupScreenDiv) return;
-
-  // Stop placeholder interval if running
-  if (progressInterval) {
-    clearInterval(progressInterval);
-    progressInterval = null;
-  }
 
   processScreenDiv.classList.add('hidden');
   setupScreenDiv.classList.remove('hidden');
@@ -68,7 +64,6 @@ export function hideProcessScreen(cancelled: boolean = false, message?: string) 
 // Cancel Button Click
 cancelProcessButton?.addEventListener('click', () => {
   console.log('Cancel download button clicked');
-  // TODO: Add actual IPC call to notify the main process to cancel
-  // window.electron.ipcRenderer.send('cancel-download');
+  window.electronAPI.cancelDownload();
   hideProcessScreen(true, 'Download cancelled by user.');
 }); 
