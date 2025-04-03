@@ -86,6 +86,43 @@ async function downloadProductImages(
   }
 }
 
+// Function to process a batch of products
+async function processProductBatch(
+  browser: Browser,
+  products: Array<{ url: string; productId: string }>,
+  domainFolderPath: string,
+  startIndex: number,
+  totalProducts: number
+): Promise<void> {
+  for (const product of products) {
+    try {
+      const result = await downloadProductImages(browser, {
+        url: product.url,
+        productId: product.productId,
+        domainFolderPath
+      });
+
+      if (!result.success) {
+        console.warn(result.message);
+      }
+
+      // Send progress update using the total number of products
+      const currentIndex = startIndex + products.indexOf(product);
+      const progress = Math.round((currentIndex / totalProducts) * 100);
+      mainWindow?.webContents.send('download-progress', {
+        progress,
+        current: currentIndex,
+        total: totalProducts
+      });
+
+      // Add a small delay to prevent overwhelming the server
+      await new Promise(resolve => setTimeout(resolve, 100));
+    } catch (error) {
+      console.error(`Error processing product ID ${product.productId}:`, error);
+    }
+  }
+}
+
 const createWindow = (): void => {
   mainWindow = new BrowserWindow({
     width: 900,
@@ -164,7 +201,6 @@ app.whenReady().then(() => {
 
   // Handle file download process
   ipcMain.handle('download-images', async (event, params: DownloadParams): Promise<DownloadStatus> => {
-    let browser: Browser | null = null;
     const { csvData, sampleUrl, storagePath, selectedProductIdField } = params;
     const rows = csvData as Record<string, string>[];
     const headers = Object.keys(rows[0] || {});
@@ -186,73 +222,76 @@ app.whenReady().then(() => {
       // Create domain folder if it doesn't exist
       await fs.mkdir(domainFolderPath, { recursive: true });
 
-      // Initialize browser
-      browser = await puppeteer.launch({
-        headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-      });
-
-      // Process each row
-      for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const productId = row[selectedProductIdField];
-
-        if (!productId) continue; // Skip rows with empty product ID
-
-        try {
-          // Remove quotes and pad product ID with leading zeros to make it 12 digits
-          const cleanProductId = productId.toString().replace(/"/g, '');
+      // Prepare product data
+      const products = rows
+        .filter(row => row[selectedProductIdField])
+        .map(row => {
+          const cleanProductId = row[selectedProductIdField].toString().replace(/"/g, '');
           const paddedProductId = cleanProductId.padStart(12, '0');
-          console.log('Processing product ID:', paddedProductId);
+          return {
+            url: urlPattern.replace('{productId}', paddedProductId),
+            productId: paddedProductId
+          };
+        });
 
-          // Navigate to the product page using the URL pattern
-          const url = urlPattern.replace('{productId}', paddedProductId);
+      const totalProducts = products.length;
+      console.log(`Total products to process: ${totalProducts}`);
 
-          // Send progress update before starting the download
-          const progress = Math.round((i / rows.length) * 100);
-          mainWindow?.webContents.send('download-progress', {
-            progress,
-            current: i,
-            total: rows.length
+      // Number of concurrent browsers to use (adjust based on system capabilities)
+      const CONCURRENT_BROWSERS = 4;
+      const browsers: Browser[] = [];
+
+      try {
+        // Launch multiple browsers
+        for (let i = 0; i < CONCURRENT_BROWSERS; i++) {
+          const browser = await puppeteer.launch({
+            headless: true,
+            args: ['--no-sandbox', '--disable-setuid-sandbox']
           });
-
-          // Download images for this product
-          const result = await downloadProductImages(browser!, {
-            url,
-            productId: paddedProductId,
-            domainFolderPath
-          });
-
-          if (!result.success) {
-            console.warn(result.message);
-          }
-
-          // Add a small delay to ensure UI updates are processed
-          await new Promise(resolve => setTimeout(resolve, 100));
-
-        } catch (error) {
-          console.error(`Error processing product ID ${productId}:`, error);
-          continue;
+          browsers.push(browser);
         }
+
+        // Split products into batches for each browser
+        const batchSize = Math.ceil(totalProducts / CONCURRENT_BROWSERS);
+        const batches = browsers.map((browser, index) => {
+          const start = index * batchSize;
+          const end = Math.min(start + batchSize, totalProducts);
+          return {
+            browser,
+            products: products.slice(start, end),
+            startIndex: start
+          };
+        });
+
+        // Process all batches concurrently
+        await Promise.all(
+          batches.map(({ browser, products, startIndex }) =>
+            processProductBatch(browser, products, domainFolderPath, startIndex, totalProducts)
+          )
+        );
+
+        // Send final progress update
+        mainWindow?.webContents.send('download-progress', {
+          progress: 100,
+          current: totalProducts,
+          total: totalProducts
+        });
+
+        // Send completion status
+        mainWindow?.webContents.send('download-complete', {
+          success: true,
+          message: `All images downloaded successfully to ${domainName} folder!`
+        });
+
+        return {
+          success: true,
+          message: `All images downloaded successfully to ${domainName} folder!`
+        };
+
+      } finally {
+        // Clean up all browsers
+        await Promise.all(browsers.map(browser => browser.close().catch(console.error)));
       }
-
-      // Send final progress update
-      mainWindow?.webContents.send('download-progress', {
-        progress: 100,
-        current: rows.length,
-        total: rows.length
-      });
-
-      // Send completion status
-      mainWindow?.webContents.send('download-complete', {
-        success: true,
-        message: `All images downloaded successfully to ${domainName} folder!`
-      });
-
-      return {
-        success: true,
-        message: `All images downloaded successfully to ${domainName} folder!`
-      };
 
     } catch (error) {
       console.error('Error in download process:', error);
@@ -265,15 +304,6 @@ app.whenReady().then(() => {
         success: false,
         message: error instanceof Error ? error.message : 'Unknown error occurred'
       };
-    } finally {
-      // Clean up browser
-      if (browser) {
-        try {
-          await browser.close();
-        } catch (cleanupError) {
-          console.error('Error cleaning up browser:', cleanupError);
-        }
-      }
     }
   });
 
