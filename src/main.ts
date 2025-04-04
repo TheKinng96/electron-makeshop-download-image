@@ -24,14 +24,14 @@ async function downloadProductImages(
   params: SingleImageParams
 ): Promise<{ success: boolean; message: string }> {
   const { url, productId, domainFolderPath } = params;
-  const page = await browser.newPage();
+  let page = await browser.newPage();
 
   try {
     console.log('Navigating to:', url);
     await page.goto(url, { waitUntil: 'networkidle0' });
 
-    // Find the product image
-    const imgSelector = 'img[src*="itemimages"]';
+    // Find product images - check for makeshop-multi-images.akamaized.net domain
+    const imgSelector = 'img[src*="makeshop-multi-images.akamaized.net"]';
 
     // Get all matching image elements
     const imgElements = await page.$$(imgSelector);
@@ -41,48 +41,122 @@ async function downloadProductImages(
       return { success: false, message: `No images found for product ID: ${productId}` };
     }
 
-    // Loop over all found images
-    for (const [idx, imgElement] of imgElements.entries()) {
-      // Get the src attribute of the image
-      const imgSrc = await imgElement.evaluate((el) => el.getAttribute('src'));
-      if (!imgSrc) {
-        console.warn(`No image source found for product ID: ${productId}`);
+    console.log(`Found ${imgElements.length} images for product ID: ${productId}`);
+
+    // Keep track of used suffixes to avoid duplicates
+    const usedSuffixes = new Set<string>();
+    let downloadedCount = 0;
+
+    // Get all image URLs first to avoid page context issues
+    const imageUrls = await Promise.all(
+      imgElements.map(async (img) => {
+        try {
+          return await img.evaluate((el) => el.getAttribute('src'));
+        } catch (error) {
+          console.warn(`Error getting image source: ${error}`);
+          return null;
+        }
+      })
+    );
+
+    // Filter out null values and validate URLs
+    const validImageUrls = imageUrls.filter((url): url is string => {
+      if (!url) return false;
+      if (!url.includes(productId)) {
+        console.warn(`Image source does not contain product ID: ${url}`);
+        return false;
+      }
+      return true;
+    });
+
+    console.log(`Processing ${validImageUrls.length} valid images for product ID: ${productId}`);
+
+    // Process each valid image URL
+    for (const [idx, imgSrc] of validImageUrls.entries()) {
+      try {
+        // Extract the suffix from the image filename using regex.
+        // Handle various patterns: productId_suffix.jpg, productId.jpg, etc.
+        let suffix = idx.toString();
+
+        // Try to extract suffix using a more flexible regex
+        const regex = new RegExp(`${productId}(?:_(\\w+))?\\.jpg`);
+        const match = imgSrc.match(regex);
+
+        if (match && match[1]) {
+          suffix = match[1];
+        }
+
+        // Generate a unique suffix that doesn't conflict with existing files
+        let uniqueSuffix = suffix;
+        let counter = 1;
+        let filePath = path.join(domainFolderPath, `${productId}_${uniqueSuffix}.jpg`);
+
+        // Check if file exists and update suffix until we find a unique name
+        while (usedSuffixes.has(uniqueSuffix) || await fileExists(filePath)) {
+          uniqueSuffix = `${suffix}_${counter}`;
+          filePath = path.join(domainFolderPath, `${productId}_${uniqueSuffix}.jpg`);
+          counter++;
+        }
+
+        usedSuffixes.add(uniqueSuffix);
+
+        // Create a new page for each image download to avoid context issues
+        await page.close();
+        page = await browser.newPage();
+
+        // Download the image by navigating to the URL
+        const response = await page.goto(imgSrc, { waitUntil: 'networkidle0' });
+        if (!response) {
+          console.warn(`Failed to fetch image for product ID: ${productId}`);
+          continue;
+        }
+
+        const buffer = await response.buffer();
+        if (!buffer) {
+          console.warn(`No image data received for product ID: ${productId}`);
+          continue;
+        }
+
+        // Save the image with a filename that includes the product ID and unique suffix
+        await fs.writeFile(filePath, buffer);
+        downloadedCount++;
+
+        console.log(`Downloaded image ${downloadedCount}/${validImageUrls.length} for product ID: ${productId}`);
+      } catch (error) {
+        console.error(`Error processing image ${idx + 1} for product ID ${productId}:`, error);
+        // Continue with the next image even if this one fails
         continue;
       }
-
-      // Check that the src contains "itemimages"
-      if (!imgSrc.includes('itemimages')) {
-        console.warn(`Image source does not contain 'itemimages': ${imgSrc}`);
-        continue;
-      }
-
-      // Extract the suffix from the image filename using regex.
-      const regex = new RegExp(`${productId}_(\\w+)\\.jpg`);
-      const match = imgSrc.match(regex);
-      const suffix = match && match[1] ? match[1] : idx;
-
-      // Download the image by navigating to the URL
-      const response = await page.goto(imgSrc);
-      if (!response) {
-        console.warn(`Failed to fetch image for product ID: ${productId}`);
-        continue;
-      }
-
-      const buffer = await response.buffer();
-      if (!buffer) {
-        console.warn(`No image data received for product ID: ${productId}`);
-        continue;
-      }
-
-      // Save the image with a filename that includes the product ID and suffix
-      const fileName = `${productId}_${suffix}.jpg`;
-      const filePath = path.join(domainFolderPath, fileName);
-      await fs.writeFile(filePath, buffer);
     }
 
-    return { success: true, message: `Successfully downloaded images for product ID: ${productId}` };
+    if (downloadedCount === 0) {
+      return { success: false, message: `Failed to download any images for product ID: ${productId}` };
+    }
+
+    return {
+      success: true,
+      message: `Successfully downloaded ${downloadedCount} images for product ID: ${productId}`
+    };
+  } catch (error) {
+    console.error(`Error in downloadProductImages for product ID ${productId}:`, error);
+    return {
+      success: false,
+      message: `Error downloading images for product ID: ${productId} - ${error instanceof Error ? error.message : 'Unknown error'}`
+    };
   } finally {
-    await page.close();
+    if (page) {
+      await page.close().catch(console.error);
+    }
+  }
+}
+
+// Helper function to check if a file exists
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch (error) {
+    return false;
   }
 }
 
