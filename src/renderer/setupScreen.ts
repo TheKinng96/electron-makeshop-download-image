@@ -1,9 +1,7 @@
 import { showStatus } from './statusUtils';
 import { showProcessScreen, hideProcessScreen } from './processScreen';
-import type { Browser } from 'puppeteer';
-import puppeteer from 'puppeteer';
 import Papa from 'papaparse';
-import { DownloadProgress } from '../types';
+import { ImageUrl } from '../types';
 
 // Get Setup Screen Elements
 const setupScreenDiv = document.getElementById('setupScreen') as HTMLDivElement;
@@ -141,6 +139,48 @@ browseButton?.addEventListener('click', async () => {
   }
 });
 
+// Function to extract domain name from URL
+function extractDomainName(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname;
+  } catch (error) {
+    console.error('Error extracting domain name:', error);
+    return 'unknown-domain';
+  }
+}
+
+// Function to download a single image with progress tracking
+async function downloadSingleImageWithProgress(
+  imageUrl: ImageUrl,
+  domainFolderPath: string,
+  currentIndex: number,
+  totalImages: number
+): Promise<boolean> {
+  try {
+    // Update progress before downloading
+    const progress = Math.round((currentIndex / totalImages) * 100);
+    const progressBar = document.getElementById('downloadProgressBar') as HTMLProgressElement;
+    const progressText = document.getElementById('progressStatusText') as HTMLDivElement;
+
+    if (progressBar) progressBar.value = progress;
+    if (progressText) {
+      progressText.textContent = `Downloading images (${currentIndex}/${totalImages})`;
+    }
+
+    // Download the image
+    const result = await window.electronAPI.downloadSingleImage({
+      imageUrl,
+      domainFolderPath,
+    });
+
+    return result.success;
+  } catch (error) {
+    console.error(`Error downloading image for product ID ${imageUrl.productId}:`, error);
+    return false;
+  }
+}
+
 // Handle start button click
 startButton?.addEventListener('click', async () => {
   if (!csvFileInput || !storagePathInput || !shopDomainInput || !statusDiv || !productIdField) return;
@@ -196,23 +236,12 @@ startButton?.addEventListener('click', async () => {
       throw new Error('Error parsing CSV: ' + result.errors[0].message);
     }
 
-    // Set up progress listener
-    window.electronAPI.onDownloadProgress((event: any, data: DownloadProgress) => {
-      const progressBar = document.getElementById('downloadProgressBar') as HTMLProgressElement;
-      const progressStatusText = document.getElementById('progressStatusText') as HTMLDivElement;
-
-      if (progressBar) progressBar.value = data.progress;
-      if (progressStatusText) {
-        progressStatusText.textContent = data.message;
-      }
-    });
-
     // First stage: Check for images
     const checkResult = await window.electronAPI.checkImages({
       csvData: result.data,
       sampleUrl,
-      storagePath,
-      selectedProductIdField
+      selectedProductIdField,
+      storagePath
     });
 
     if (!checkResult.success) {
@@ -223,20 +252,55 @@ startButton?.addEventListener('click', async () => {
       throw new Error('No images found to download');
     }
 
-    // Second stage: Download images
-    const downloadResult = await window.electronAPI.downloadImages({
-      imageUrls: checkResult.imageUrls,
+    // Create domain folder
+    const domainName = extractDomainName(sampleUrl);
+    const domainFolderPath = await window.electronAPI.createDomainFolder({
       storagePath,
-      sampleUrl
+      domainName
     });
 
-    if (downloadResult.success) {
-      showStatus('All images downloaded successfully!', 'success');
+    // Second stage: Download images one by one with progress tracking
+    const totalImages = checkResult.imageUrls.length;
+    let successCount = 0;
+    let failureCount = 0;
+
+    // Update progress bar for download stage
+    const progressBar = document.getElementById('downloadProgressBar') as HTMLProgressElement;
+    const progressText = document.getElementById('progressStatusText') as HTMLDivElement;
+
+    if (progressBar) progressBar.value = 0;
+    if (progressText) {
+      progressText.textContent = `Starting download of ${totalImages} images...`;
+    }
+
+    // Download images one by one
+    for (let i = 0; i < totalImages; i++) {
+      const imageUrl = checkResult.imageUrls[i];
+      const success = await downloadSingleImageWithProgress(
+        imageUrl,
+        domainFolderPath,
+        i + 1,
+        totalImages
+      );
+
+      if (success) {
+        successCount++;
+      } else {
+        failureCount++;
+      }
+    }
+
+    // Show final status
+    if (successCount === totalImages) {
+      showStatus(`All ${totalImages} images downloaded successfully!`, 'success');
       setTimeout(() => {
-        hideProcessScreen(false, 'All images downloaded successfully!');
+        hideProcessScreen(false, `All ${totalImages} images downloaded successfully!`);
       }, 2000);
     } else {
-      throw new Error(downloadResult.message);
+      showStatus(`Downloaded ${successCount} of ${totalImages} images. ${failureCount} failed.`, 'success');
+      setTimeout(() => {
+        hideProcessScreen(false, `Downloaded ${successCount} of ${totalImages} images. ${failureCount} failed.`);
+      }, 2000);
     }
 
   } catch (error) {

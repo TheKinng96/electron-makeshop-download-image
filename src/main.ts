@@ -176,6 +176,13 @@ async function processImageBatch(
   }
 }
 
+// Helper function to create a folder for a domain
+async function createDomainFolder(storagePath: string, domainName: string): Promise<string> {
+  const domainFolderPath = path.join(storagePath, domainName);
+  await fs.mkdir(domainFolderPath, { recursive: true });
+  return domainFolderPath;
+}
+
 const createWindow = (): void => {
   mainWindow = new BrowserWindow({
     width: 900,
@@ -224,20 +231,20 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.handle('get-image', async (event, config: StoreConfig) => {
+  // New handler for creating domain folders
+  ipcMain.handle('create-domain-folder', async (event, params: { storagePath: string; domainName: string }): Promise<string> => {
     try {
-      const { storagePath } = config;
-      const imagePath = path.join(storagePath, 'image.png');
-      const image = await fs.readFile(imagePath);
-      return image;
+      return await createDomainFolder(params.storagePath, params.domainName);
     } catch (error) {
-      console.error('Error getting image:', error);
+      console.error('Error creating domain folder:', error);
       throw error;
     }
   });
 
   // Handle single image download
   ipcMain.handle('download-single-image', async (event, params: SingleImageParams): Promise<{ success: boolean; message: string }> => {
+    const { domainFolderPath, imageUrl } = params;
+
     let browser: Browser | null = null;
     try {
       browser = await puppeteer.launch({
@@ -245,17 +252,12 @@ app.whenReady().then(() => {
         args: ['--no-sandbox', '--disable-setuid-sandbox']
       });
 
-      const imageUrls = await checkProductImages(browser, params.url, params.productId);
-      if (imageUrls.length === 0) {
-        return { success: false, message: `No images found for product ID: ${params.productId}` };
-      }
-
-      const success = await downloadImage(browser, imageUrls[0], params.domainFolderPath);
+      const success = await downloadImage(browser, imageUrl, domainFolderPath);
       return {
         success,
         message: success
-          ? `Successfully downloaded image for product ID: ${params.productId}`
-          : `Failed to download image for product ID: ${params.productId}`
+          ? `Successfully downloaded image for product ID: ${imageUrl.productId}`
+          : `Failed to download image for product ID: ${imageUrl.productId}`
       };
     } finally {
       if (browser) {
@@ -374,109 +376,6 @@ app.whenReady().then(() => {
     } finally {
       // Clean up all browsers
       await Promise.all(browsers.map(browser => browser.close().catch(console.error)));
-    }
-  });
-
-  // Handle image download process
-  ipcMain.handle('download-images', async (event, params: { imageUrls: ImageUrl[]; storagePath: string, sampleUrl: string }): Promise<DownloadStatus> => {
-    const { imageUrls, storagePath, sampleUrl } = params;
-    const totalImages = imageUrls.length;
-
-    if (totalImages === 0) {
-      return {
-        success: false,
-        message: 'No images to download'
-      };
-    }
-
-    // Extract domain name from the first URL
-    const domainName = extractDomainName(sampleUrl);
-    const domainFolderPath = path.join(storagePath, domainName);
-
-    try {
-      // Create domain folder if it doesn't exist
-      await fs.mkdir(domainFolderPath, { recursive: true });
-
-      console.log(`Starting download of ${totalImages} images to ${domainFolderPath}`);
-
-      // Send initial download progress update
-      mainWindow?.webContents.send('download-progress', {
-        progress: 0,
-        current: 0,
-        total: totalImages,
-        stage: 'downloading',
-        message: `Starting download of ${totalImages} images...`
-      });
-
-      // Number of concurrent browsers to use
-      const CONCURRENT_BROWSERS = 4;
-      const browsers: Browser[] = [];
-
-      try {
-        // Launch multiple browsers
-        for (let i = 0; i < CONCURRENT_BROWSERS; i++) {
-          const browser = await puppeteer.launch({
-            headless: true,
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
-          });
-          browsers.push(browser);
-        }
-
-        // Split image URLs into batches for each browser
-        const batchSize = Math.ceil(totalImages / CONCURRENT_BROWSERS);
-        const batches = browsers.map((browser, index) => {
-          const start = index * batchSize;
-          const end = Math.min(start + batchSize, totalImages);
-          return {
-            browser,
-            imageUrls: imageUrls.slice(start, end),
-            startIndex: start
-          };
-        });
-
-        // Process all batches concurrently
-        await Promise.all(
-          batches.map(({ browser, imageUrls, startIndex }) =>
-            processImageBatch(browser, imageUrls, domainFolderPath, startIndex, totalImages)
-          )
-        );
-
-        // Send final progress update
-        mainWindow?.webContents.send('download-progress', {
-          progress: 100,
-          current: totalImages,
-          total: totalImages,
-          stage: 'downloading',
-          message: `All images downloaded successfully!`
-        });
-
-        // Send completion status
-        mainWindow?.webContents.send('download-complete', {
-          success: true,
-          message: `All images downloaded successfully to ${domainName} folder!`
-        });
-
-        return {
-          success: true,
-          message: `All images downloaded successfully to ${domainName} folder!`
-        };
-
-      } finally {
-        // Clean up all browsers
-        await Promise.all(browsers.map(browser => browser.close().catch(console.error)));
-      }
-
-    } catch (error) {
-      console.error('Error in download process:', error);
-      // Send error status
-      mainWindow?.webContents.send('download-complete', {
-        success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred'
-      });
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Unknown error occurred'
-      };
     }
   });
 
