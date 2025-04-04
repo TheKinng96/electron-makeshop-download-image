@@ -48,7 +48,7 @@ declare global {
       storeImage: (config: StoreConfig) => Promise<any>;
       getImage: (config: StoreConfig) => Promise<any>;
       checkImages: (params: DownloadParams) => Promise<{ success: boolean; message: string; imageUrls: ImageUrl[] }>;
-      downloadImages: (params: { imageUrls: ImageUrl[]; storagePath: string }) => Promise<DownloadStatus>;
+      downloadImages: (params: { imageUrls: ImageUrl[]; storagePath: string, sampleUrl: string }) => Promise<DownloadStatus>;
       downloadSingleImage: (params: SingleImageParams) => Promise<{ success: boolean; message: string }>;
       onDownloadProgress: (callback: (event: any, data: DownloadProgress) => void) => void;
       onDownloadComplete: (callback: (event: any, status: DownloadStatus) => void) => void;

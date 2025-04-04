@@ -226,7 +226,8 @@ startButton?.addEventListener('click', async () => {
     // Second stage: Download images
     const downloadResult = await window.electronAPI.downloadImages({
       imageUrls: checkResult.imageUrls,
-      storagePath
+      storagePath,
+      sampleUrl
     });
 
     if (downloadResult.success) {

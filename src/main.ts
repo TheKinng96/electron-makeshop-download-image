@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { StoreConfig, DownloadParams, DownloadStatus, SingleImageParams, ImageUrl, DownloadProgress } from './types';
+import { StoreConfig, DownloadParams, DownloadStatus, SingleImageParams, ImageUrl } from './types';
 import puppeteer, { Browser } from 'puppeteer';
 
 let mainWindow: BrowserWindow | null = null;
@@ -378,8 +378,8 @@ app.whenReady().then(() => {
   });
 
   // Handle image download process
-  ipcMain.handle('download-images', async (event, params: { imageUrls: ImageUrl[]; storagePath: string }): Promise<DownloadStatus> => {
-    const { imageUrls, storagePath } = params;
+  ipcMain.handle('download-images', async (event, params: { imageUrls: ImageUrl[]; storagePath: string, sampleUrl: string }): Promise<DownloadStatus> => {
+    const { imageUrls, storagePath, sampleUrl } = params;
     const totalImages = imageUrls.length;
 
     if (totalImages === 0) {
@@ -390,7 +390,7 @@ app.whenReady().then(() => {
     }
 
     // Extract domain name from the first URL
-    const domainName = extractDomainName(imageUrls[0].url);
+    const domainName = extractDomainName(sampleUrl);
     const domainFolderPath = path.join(storagePath, domainName);
 
     try {

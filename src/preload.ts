@@ -8,7 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getImage: (config: StoreConfig) => ipcRenderer.invoke('get-image', config),
   checkImages: (params: DownloadParams) =>
     ipcRenderer.invoke('check-images', params),
-  downloadImages: (params: { imageUrls: ImageUrl[]; storagePath: string }) =>
+  downloadImages: (params: { imageUrls: ImageUrl[]; storagePath: string, sampleUrl: string }) =>
     ipcRenderer.invoke('download-images', params),
   downloadSingleImage: (params: SingleImageParams) =>
     ipcRenderer.invoke('download-single-image', params),
