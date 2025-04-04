@@ -1,11 +1,21 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { StoreConfig, DownloadParams, DownloadStatus, SingleImageParams } from './types';
+import { StoreConfig, DownloadParams, DownloadStatus, SingleImageParams, ImageUrl, DownloadProgress } from './types';
 import puppeteer, { Browser } from 'puppeteer';
 
 let mainWindow: BrowserWindow | null = null;
 process.env.ELECTRON_ENABLE_LOGGING = '1';
+
+// Helper function to check if a file exists
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
 
 // Function to extract domain name from URL
 function extractDomainName(url: string): string {
@@ -18,16 +28,17 @@ function extractDomainName(url: string): string {
   }
 }
 
-// Function to download images for a single product
-async function downloadProductImages(
+// Function to check for images on a product page
+async function checkProductImages(
   browser: Browser,
-  params: SingleImageParams
-): Promise<{ success: boolean; message: string }> {
-  const { url, productId, domainFolderPath } = params;
-  let page = await browser.newPage();
+  url: string,
+  productId: string
+): Promise<ImageUrl[]> {
+  const page = await browser.newPage();
+  const imageUrls: ImageUrl[] = [];
 
   try {
-    console.log('Navigating to:', url);
+    console.log('Checking images for:', url);
     await page.goto(url, { waitUntil: 'networkidle0' });
 
     // Find product images - check for makeshop-multi-images.akamaized.net domain
@@ -38,17 +49,13 @@ async function downloadProductImages(
 
     if (!imgElements || imgElements.length === 0) {
       console.warn(`No images found for product ID: ${productId}`);
-      return { success: false, message: `No images found for product ID: ${productId}` };
+      return [];
     }
 
     console.log(`Found ${imgElements.length} images for product ID: ${productId}`);
 
-    // Keep track of used suffixes to avoid duplicates
-    const usedSuffixes = new Set<string>();
-    let downloadedCount = 0;
-
-    // Get all image URLs first to avoid page context issues
-    const imageUrls = await Promise.all(
+    // Get all image URLs
+    const urls = await Promise.all(
       imgElements.map(async (img) => {
         try {
           return await img.evaluate((el) => el.getAttribute('src'));
@@ -59,140 +66,112 @@ async function downloadProductImages(
       })
     );
 
-    // Filter out null values and validate URLs
-    const validImageUrls = imageUrls.filter((url): url is string => {
-      if (!url) return false;
-      if (!url.includes(productId)) {
-        console.warn(`Image source does not contain product ID: ${url}`);
-        return false;
-      }
-      return true;
-    });
-
-    console.log(`Processing ${validImageUrls.length} valid images for product ID: ${productId}`);
-
-    // Process each valid image URL
-    for (const [idx, imgSrc] of validImageUrls.entries()) {
-      try {
-        // Extract the suffix from the image filename using regex.
-        // Handle various patterns: productId_suffix.jpg, productId.jpg, etc.
-        let suffix = idx.toString();
-
-        // Try to extract suffix using a more flexible regex
-        const regex = new RegExp(`${productId}(?:_(\\w+))?\\.jpg`);
-        const match = imgSrc.match(regex);
-
-        if (match && match[1]) {
-          suffix = match[1];
-        }
-
-        // Generate a unique suffix that doesn't conflict with existing files
-        let uniqueSuffix = suffix;
-        let counter = 1;
-        let filePath = path.join(domainFolderPath, `${productId}_${uniqueSuffix}.jpg`);
-
-        // Check if file exists and update suffix until we find a unique name
-        while (usedSuffixes.has(uniqueSuffix) || await fileExists(filePath)) {
-          uniqueSuffix = `${suffix}_${counter}`;
-          filePath = path.join(domainFolderPath, `${productId}_${uniqueSuffix}.jpg`);
-          counter++;
-        }
-
-        usedSuffixes.add(uniqueSuffix);
-
-        // Create a new page for each image download to avoid context issues
-        await page.close();
-        page = await browser.newPage();
-
-        // Download the image by navigating to the URL
-        const response = await page.goto(imgSrc, { waitUntil: 'networkidle0' });
-        if (!response) {
-          console.warn(`Failed to fetch image for product ID: ${productId}`);
-          continue;
-        }
-
-        const buffer = await response.buffer();
-        if (!buffer) {
-          console.warn(`No image data received for product ID: ${productId}`);
-          continue;
-        }
-
-        // Save the image with a filename that includes the product ID and unique suffix
-        await fs.writeFile(filePath, buffer);
-        downloadedCount++;
-
-        console.log(`Downloaded image ${downloadedCount}/${validImageUrls.length} for product ID: ${productId}`);
-      } catch (error) {
-        console.error(`Error processing image ${idx + 1} for product ID ${productId}:`, error);
-        // Continue with the next image even if this one fails
+    // Filter and process valid URLs
+    for (const [idx, imgSrc] of urls.entries()) {
+      if (!imgSrc || !imgSrc.includes(productId)) {
         continue;
       }
-    }
 
-    if (downloadedCount === 0) {
-      return { success: false, message: `Failed to download any images for product ID: ${productId}` };
-    }
+      // Extract the suffix from the image filename
+      let suffix = idx.toString();
+      const regex = new RegExp(`${productId}(?:_(\\w+))?\\.jpg`);
+      const match = imgSrc.match(regex);
 
-    return {
-      success: true,
-      message: `Successfully downloaded ${downloadedCount} images for product ID: ${productId}`
-    };
-  } catch (error) {
-    console.error(`Error in downloadProductImages for product ID ${productId}:`, error);
-    return {
-      success: false,
-      message: `Error downloading images for product ID: ${productId} - ${error instanceof Error ? error.message : 'Unknown error'}`
-    };
-  } finally {
-    if (page) {
-      await page.close().catch(console.error);
-    }
-  }
-}
-
-// Helper function to check if a file exists
-async function fileExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch (error) {
-    return false;
-  }
-}
-
-// Function to process a batch of products
-async function processProductBatch(
-  browser: Browser,
-  products: Array<{ url: string; productId: string }>,
-  domainFolderPath: string,
-  startIndex: number,
-  totalProducts: number
-): Promise<void> {
-  for (const product of products) {
-    try {
-      const result = await downloadProductImages(browser, {
-        url: product.url,
-        productId: product.productId,
-        domainFolderPath
-      });
-
-      if (!result.success) {
-        console.warn(result.message);
+      if (match && match[1]) {
+        suffix = match[1];
       }
 
-      // Send progress update using the total number of products
-      const currentIndex = startIndex + products.indexOf(product);
-      const progress = Math.round((currentIndex / totalProducts) * 100);
+      imageUrls.push({
+        url: imgSrc,
+        productId,
+        suffix
+      });
+    }
+
+    return imageUrls;
+  } finally {
+    await page.close();
+  }
+}
+
+// Function to download a single image
+async function downloadImage(
+  browser: Browser,
+  imageUrl: ImageUrl,
+  domainFolderPath: string
+): Promise<boolean> {
+  const { url, productId, suffix } = imageUrl;
+  let page = await browser.newPage();
+
+  try {
+    // Generate a unique suffix that doesn't conflict with existing files
+    let uniqueSuffix = suffix;
+    let counter = 1;
+    let filePath = path.join(domainFolderPath, `${productId}_${uniqueSuffix}.jpg`);
+
+    // Check if file exists and update suffix until we find a unique name
+    while (await fileExists(filePath)) {
+      uniqueSuffix = `${suffix}_${counter}`;
+      filePath = path.join(domainFolderPath, `${productId}_${uniqueSuffix}.jpg`);
+      counter++;
+    }
+
+    // Download the image
+    const response = await page.goto(url, { waitUntil: 'networkidle0' });
+    if (!response) {
+      console.warn(`Failed to fetch image: ${url}`);
+      return false;
+    }
+
+    const buffer = await response.buffer();
+    if (!buffer) {
+      console.warn(`No image data received: ${url}`);
+      return false;
+    }
+
+    // Save the image
+    await fs.writeFile(filePath, buffer);
+    return true;
+  } catch (error) {
+    console.error(`Error downloading image: ${url}`, error);
+    return false;
+  } finally {
+    await page.close();
+  }
+}
+
+// Function to process a batch of image URLs
+async function processImageBatch(
+  browser: Browser,
+  imageUrls: ImageUrl[],
+  domainFolderPath: string,
+  startIndex: number,
+  totalImages: number
+): Promise<void> {
+  let processedImages = 0;
+
+  for (const imageUrl of imageUrls) {
+    try {
+      const success = await downloadImage(browser, imageUrl, domainFolderPath);
+
+      if (success) {
+        processedImages++;
+      }
+
+      // Send progress update
+      const progress = Math.round(((startIndex + processedImages) / totalImages) * 100);
       mainWindow?.webContents.send('download-progress', {
         progress,
-        current: currentIndex,
-        total: totalProducts
+        current: startIndex + processedImages,
+        total: totalImages,
+        stage: 'downloading',
+        message: `Downloading images (${startIndex + processedImages}/${totalImages})`
       });
 
       // Add a small delay to prevent overwhelming the server
       await new Promise(resolve => setTimeout(resolve, 100));
     } catch (error) {
-      console.error(`Error processing product ID ${product.productId}:`, error);
+      console.error(`Error processing image for product ID ${imageUrl.productId}:`, error);
     }
   }
 }
@@ -265,7 +244,19 @@ app.whenReady().then(() => {
         headless: true,
         args: ['--no-sandbox', '--disable-setuid-sandbox']
       });
-      return await downloadProductImages(browser, params);
+
+      const imageUrls = await checkProductImages(browser, params.url, params.productId);
+      if (imageUrls.length === 0) {
+        return { success: false, message: `No images found for product ID: ${params.productId}` };
+      }
+
+      const success = await downloadImage(browser, imageUrls[0], params.domainFolderPath);
+      return {
+        success,
+        message: success
+          ? `Successfully downloaded image for product ID: ${params.productId}`
+          : `Failed to download image for product ID: ${params.productId}`
+      };
     } finally {
       if (browser) {
         await browser.close();
@@ -273,9 +264,9 @@ app.whenReady().then(() => {
     }
   });
 
-  // Handle file download process
-  ipcMain.handle('download-images', async (event, params: DownloadParams): Promise<DownloadStatus> => {
-    const { csvData, sampleUrl, storagePath, selectedProductIdField } = params;
+  // Handle image checking process
+  ipcMain.handle('check-images', async (event, params: DownloadParams): Promise<{ success: boolean; message: string; imageUrls: ImageUrl[] }> => {
+    const { csvData, sampleUrl, selectedProductIdField } = params;
     const rows = csvData as Record<string, string>[];
     const headers = Object.keys(rows[0] || {});
     const productIdIndex = headers.indexOf(selectedProductIdField);
@@ -284,34 +275,140 @@ app.whenReady().then(() => {
       throw new Error(`Product ID field "${selectedProductIdField}" not found in CSV`);
     }
 
-    // Extract the URL pattern and domain name from the sample URL
+    // Extract the URL pattern from the sample URL
     const urlPattern = sampleUrl.replace(/\d{12}/, '{productId}');
-    const domainName = extractDomainName(sampleUrl);
-    const domainFolderPath = path.join(storagePath, domainName);
 
-    console.log('Using URL pattern:', urlPattern);
-    console.log('Using domain folder:', domainFolderPath);
+    // Prepare product data
+    const products = rows
+      .filter(row => row[selectedProductIdField])
+      .map(row => {
+        const cleanProductId = row[selectedProductIdField].toString().replace(/"/g, '');
+        const paddedProductId = cleanProductId.padStart(12, '0');
+        return {
+          url: urlPattern.replace('{productId}', paddedProductId),
+          productId: paddedProductId
+        };
+      });
+
+    const totalProducts = products.length;
+    console.log(`Total products to check: ${totalProducts}`);
+
+    // Send initial progress update
+    mainWindow?.webContents.send('download-progress', {
+      progress: 0,
+      current: 0,
+      total: totalProducts,
+      stage: 'checking',
+      message: `Checking images for ${totalProducts} products...`
+    });
+
+    // Number of concurrent browsers to use
+    const CONCURRENT_BROWSERS = 4;
+    const browsers: Browser[] = [];
+    const allImageUrls: ImageUrl[] = [];
+    let processedProducts = 0;
+
+    try {
+      // Launch multiple browsers
+      for (let i = 0; i < CONCURRENT_BROWSERS; i++) {
+        const browser = await puppeteer.launch({
+          headless: true,
+          args: ['--no-sandbox', '--disable-setuid-sandbox']
+        });
+        browsers.push(browser);
+      }
+
+      // Split products into batches for each browser
+      const batchSize = Math.ceil(totalProducts / CONCURRENT_BROWSERS);
+      const batches = browsers.map((browser, index) => {
+        const start = index * batchSize;
+        const end = Math.min(start + batchSize, totalProducts);
+        return {
+          browser,
+          products: products.slice(start, end)
+        };
+      });
+
+      // Process all batches concurrently
+      await Promise.all(
+        batches.map(async ({ browser, products }) => {
+          for (const product of products) {
+            try {
+              const imageUrls = await checkProductImages(browser, product.url, product.productId);
+              allImageUrls.push(...imageUrls);
+
+              processedProducts++;
+
+              // Send progress update
+              const progress = Math.round((processedProducts / totalProducts) * 100);
+              mainWindow?.webContents.send('download-progress', {
+                progress,
+                current: processedProducts,
+                total: totalProducts,
+                stage: 'checking',
+                message: `Checking images (${processedProducts}/${totalProducts} products)`
+              });
+            } catch (error) {
+              console.error(`Error checking images for product ID ${product.productId}:`, error);
+              processedProducts++;
+            }
+          }
+        })
+      );
+
+      // Send final checking progress update
+      mainWindow?.webContents.send('download-progress', {
+        progress: 100,
+        current: totalProducts,
+        total: totalProducts,
+        stage: 'checking',
+        message: `Found ${allImageUrls.length} images to download`
+      });
+
+      return {
+        success: true,
+        message: `Found ${allImageUrls.length} images to download`,
+        imageUrls: allImageUrls
+      };
+
+    } finally {
+      // Clean up all browsers
+      await Promise.all(browsers.map(browser => browser.close().catch(console.error)));
+    }
+  });
+
+  // Handle image download process
+  ipcMain.handle('download-images', async (event, params: { imageUrls: ImageUrl[]; storagePath: string }): Promise<DownloadStatus> => {
+    const { imageUrls, storagePath } = params;
+    const totalImages = imageUrls.length;
+
+    if (totalImages === 0) {
+      return {
+        success: false,
+        message: 'No images to download'
+      };
+    }
+
+    // Extract domain name from the first URL
+    const domainName = extractDomainName(imageUrls[0].url);
+    const domainFolderPath = path.join(storagePath, domainName);
 
     try {
       // Create domain folder if it doesn't exist
       await fs.mkdir(domainFolderPath, { recursive: true });
 
-      // Prepare product data
-      const products = rows
-        .filter(row => row[selectedProductIdField])
-        .map(row => {
-          const cleanProductId = row[selectedProductIdField].toString().replace(/"/g, '');
-          const paddedProductId = cleanProductId.padStart(12, '0');
-          return {
-            url: urlPattern.replace('{productId}', paddedProductId),
-            productId: paddedProductId
-          };
-        });
+      console.log(`Starting download of ${totalImages} images to ${domainFolderPath}`);
 
-      const totalProducts = products.length;
-      console.log(`Total products to process: ${totalProducts}`);
+      // Send initial download progress update
+      mainWindow?.webContents.send('download-progress', {
+        progress: 0,
+        current: 0,
+        total: totalImages,
+        stage: 'downloading',
+        message: `Starting download of ${totalImages} images...`
+      });
 
-      // Number of concurrent browsers to use (adjust based on system capabilities)
+      // Number of concurrent browsers to use
       const CONCURRENT_BROWSERS = 4;
       const browsers: Browser[] = [];
 
@@ -325,30 +422,32 @@ app.whenReady().then(() => {
           browsers.push(browser);
         }
 
-        // Split products into batches for each browser
-        const batchSize = Math.ceil(totalProducts / CONCURRENT_BROWSERS);
+        // Split image URLs into batches for each browser
+        const batchSize = Math.ceil(totalImages / CONCURRENT_BROWSERS);
         const batches = browsers.map((browser, index) => {
           const start = index * batchSize;
-          const end = Math.min(start + batchSize, totalProducts);
+          const end = Math.min(start + batchSize, totalImages);
           return {
             browser,
-            products: products.slice(start, end),
+            imageUrls: imageUrls.slice(start, end),
             startIndex: start
           };
         });
 
         // Process all batches concurrently
         await Promise.all(
-          batches.map(({ browser, products, startIndex }) =>
-            processProductBatch(browser, products, domainFolderPath, startIndex, totalProducts)
+          batches.map(({ browser, imageUrls, startIndex }) =>
+            processImageBatch(browser, imageUrls, domainFolderPath, startIndex, totalImages)
           )
         );
 
         // Send final progress update
         mainWindow?.webContents.send('download-progress', {
           progress: 100,
-          current: totalProducts,
-          total: totalProducts
+          current: totalImages,
+          total: totalImages,
+          stage: 'downloading',
+          message: `All images downloaded successfully!`
         });
 
         // Send completion status

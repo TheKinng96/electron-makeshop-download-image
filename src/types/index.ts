@@ -8,6 +8,14 @@ export interface DownloadProgress {
   progress: number;
   current: number;
   total: number;
+  stage: 'checking' | 'downloading';
+  message: string;
+}
+
+export interface ImageUrl {
+  url: string;
+  productId: string;
+  suffix: string;
 }
 
 export interface DownloadParams {
@@ -39,7 +47,8 @@ declare global {
       selectFolder: () => Promise<string | null>;
       storeImage: (config: StoreConfig) => Promise<any>;
       getImage: (config: StoreConfig) => Promise<any>;
-      downloadImages: (params: DownloadParams) => Promise<DownloadStatus>;
+      checkImages: (params: DownloadParams) => Promise<{ success: boolean; message: string; imageUrls: ImageUrl[] }>;
+      downloadImages: (params: { imageUrls: ImageUrl[]; storagePath: string }) => Promise<DownloadStatus>;
       downloadSingleImage: (params: SingleImageParams) => Promise<{ success: boolean; message: string }>;
       onDownloadProgress: (callback: (event: any, data: DownloadProgress) => void) => void;
       onDownloadComplete: (callback: (event: any, status: DownloadStatus) => void) => void;

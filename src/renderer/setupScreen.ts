@@ -3,6 +3,7 @@ import { showProcessScreen, hideProcessScreen } from './processScreen';
 import type { Browser } from 'puppeteer';
 import puppeteer from 'puppeteer';
 import Papa from 'papaparse';
+import { DownloadProgress } from '../types';
 
 // Get Setup Screen Elements
 const setupScreenDiv = document.getElementById('setupScreen') as HTMLDivElement;
@@ -146,7 +147,7 @@ startButton?.addEventListener('click', async () => {
 
   const csvFile = csvFileInput.files?.[0];
   const storagePath = storagePathInput.value;
-  const sampleUrl = shopDomainInput.value;  // We'll keep the variable name for now
+  const sampleUrl = shopDomainInput.value;
   const selectedProductIdField = productIdField.value;
 
   // --- Input Validation ---
@@ -196,31 +197,45 @@ startButton?.addEventListener('click', async () => {
     }
 
     // Set up progress listener
-    window.electronAPI.onDownloadProgress((event: any, data: { progress: number, current: number, total: number }) => {
+    window.electronAPI.onDownloadProgress((event: any, data: DownloadProgress) => {
       const progressBar = document.getElementById('downloadProgressBar') as HTMLProgressElement;
       const progressStatusText = document.getElementById('progressStatusText') as HTMLDivElement;
 
       if (progressBar) progressBar.value = data.progress;
       if (progressStatusText) {
-        progressStatusText.textContent = `Downloading... ${data.progress}% (${data.current}/${data.total})`;
+        progressStatusText.textContent = data.message;
       }
     });
 
-    // Start the download process
-    const response = await window.electronAPI.downloadImages({
+    // First stage: Check for images
+    const checkResult = await window.electronAPI.checkImages({
       csvData: result.data,
       sampleUrl,
       storagePath,
       selectedProductIdField
     });
 
-    if (response.success) {
+    if (!checkResult.success) {
+      throw new Error(checkResult.message);
+    }
+
+    if (checkResult.imageUrls.length === 0) {
+      throw new Error('No images found to download');
+    }
+
+    // Second stage: Download images
+    const downloadResult = await window.electronAPI.downloadImages({
+      imageUrls: checkResult.imageUrls,
+      storagePath
+    });
+
+    if (downloadResult.success) {
       showStatus('All images downloaded successfully!', 'success');
       setTimeout(() => {
         hideProcessScreen(false, 'All images downloaded successfully!');
       }, 2000);
     } else {
-      throw new Error(response.message);
+      throw new Error(downloadResult.message);
     }
 
   } catch (error) {
