@@ -150,20 +150,21 @@ function extractDomainName(url: string): string {
   }
 }
 
-// Function to download images in batches with progress tracking
-async function downloadImagesInBatches(
+// Function to download images in parallel with progress tracking
+async function downloadImagesInParallel(
   imageUrls: ImageUrl[],
-  domainFolderPath: string,
-  batchSize: number = 4
-): Promise<{ successCount: number; failureCount: number }> {
+  domainFolderPath: string
+): Promise<{ successCount: number; failureCount: number; cancelled: boolean }> {
   const totalImages = imageUrls.length;
   let successCount = 0;
   let failureCount = 0;
   let processedCount = 0;
+  let cancelled = false;
 
   // Create progress elements
   const progressBar = document.getElementById('downloadProgressBar') as HTMLProgressElement;
   const progressText = document.getElementById('progressStatusText') as HTMLDivElement;
+  const cancelButton = document.getElementById('cancelButton') as HTMLButtonElement;
 
   // Initialize progress
   if (progressBar) progressBar.value = 0;
@@ -171,47 +172,89 @@ async function downloadImagesInBatches(
     progressText.textContent = `Starting download of ${totalImages} images...`;
   }
 
-  // Process images in batches
-  for (let i = 0; i < totalImages; i += batchSize) {
-    const batch = imageUrls.slice(i, i + batchSize);
-    const batchPromises = batch.map(async (imageUrl) => {
-      try {
-        // Download the image
-        const result = await window.electronAPI.downloadSingleImage({
-          imageUrl,
-          domainFolderPath,
-        });
+  // Set up cancellation handler
+  if (cancelButton) {
+    cancelButton.addEventListener('click', async () => {
+      // Send cancellation request to main process
+      await window.electronAPI.cancelDownload();
 
-        // Update progress after each image
-        processedCount++;
-        const progress = Math.round((processedCount / totalImages) * 100);
-
-        if (progressBar) progressBar.value = progress;
-        if (progressText) {
-          progressText.textContent = `Downloading images (${processedCount}/${totalImages})`;
-        }
-
-        return result.success;
-      } catch (error) {
-        console.error(`Error downloading image for product ID ${imageUrl.productId}:`, error);
-        return false;
+      // Update UI to show cancellation
+      if (progressText) {
+        progressText.textContent = 'Download cancelled by user';
       }
-    });
 
-    // Wait for all images in the batch to complete
-    const batchResults = await Promise.all(batchPromises);
-
-    // Count successes and failures
-    batchResults.forEach(success => {
-      if (success) {
-        successCount++;
-      } else {
-        failureCount++;
-      }
+      // Set cancelled flag
+      cancelled = true;
     });
   }
 
-  return { successCount, failureCount };
+  // Process all images in parallel
+  const downloadPromises = imageUrls.map(async (imageUrl) => {
+    // Check if download has been cancelled
+    if (cancelled) {
+      return false;
+    }
+
+    try {
+      // Download the image
+      const result = await window.electronAPI.downloadSingleImage({
+        imageUrl,
+        domainFolderPath,
+      });
+
+      // Update progress after each image
+      processedCount++;
+      const progress = Math.round((processedCount / totalImages) * 100);
+
+      if (progressBar) progressBar.value = progress;
+      if (progressText && !cancelled) {
+        progressText.textContent = `Downloading images (${processedCount}/${totalImages})`;
+      }
+
+      return result.success;
+    } catch (error) {
+      console.error(`Error downloading image for product ID ${imageUrl.productId}:`, error);
+      return false;
+    }
+  });
+
+  // Wait for all downloads to complete or until cancelled
+  const results = await Promise.all(downloadPromises);
+
+  // Count successes and failures
+  results.forEach(success => {
+    if (success) {
+      successCount++;
+    } else {
+      failureCount++;
+    }
+  });
+
+  return { successCount, failureCount, cancelled };
+}
+
+// Function to reset form inputs after download
+function resetFormAfterDownload() {
+  // Clear CSV file input
+  if (csvFileInput) {
+    csvFileInput.value = '';
+  }
+
+  // Clear sample URL input
+  if (shopDomainInput) {
+    shopDomainInput.value = '';
+  }
+
+  // Reset product ID field
+  if (productIdField) {
+    productIdField.value = '';
+    productIdField.disabled = true;
+  }
+
+  // Hide product ID field container
+  if (productIdFieldContainer) {
+    productIdFieldContainer.classList.add('hidden');
+  }
 }
 
 // Handle start button click
@@ -292,23 +335,33 @@ startButton?.addEventListener('click', async () => {
       domainName
     });
 
-    // Second stage: Download images in parallel batches with progress tracking
-    const { successCount, failureCount } = await downloadImagesInBatches(
+    // Second stage: Download images in parallel with progress tracking
+    const { successCount, failureCount, cancelled } = await downloadImagesInParallel(
       checkResult.imageUrls,
-      domainFolderPath,
-      4 // Process 4 images concurrently
+      domainFolderPath
     );
 
     // Show final status
-    if (successCount === checkResult.imageUrls.length) {
-      showStatus(`All ${checkResult.imageUrls.length} images downloaded successfully!`, 'success');
+    if (cancelled) {
+      showStatus(`Download cancelled. ${successCount} images downloaded before cancellation.`, 'success');
       setTimeout(() => {
-        hideProcessScreen(false, `All ${checkResult.imageUrls.length} images downloaded successfully!`);
+        hideProcessScreen(false, `Download cancelled. ${successCount} images downloaded before cancellation.`);
+        // Reset form inputs after cancellation
+        resetFormAfterDownload();
+      }, 2000);
+    } else if (successCount === checkResult.imageUrls.length) {
+      showStatus(`All ${checkResult.imageUrls.length} images downloaded successfully! Images are organized in product-specific folders.`, 'success');
+      setTimeout(() => {
+        hideProcessScreen(false, `All ${checkResult.imageUrls.length} images downloaded successfully! Images are organized in product-specific folders.`);
+        // Reset form inputs after successful download
+        resetFormAfterDownload();
       }, 2000);
     } else {
-      showStatus(`Downloaded ${successCount} of ${checkResult.imageUrls.length} images. ${failureCount} failed.`, 'success');
+      showStatus(`Downloaded ${successCount} of ${checkResult.imageUrls.length} images. ${failureCount} failed. Images are organized in product-specific folders.`, 'success');
       setTimeout(() => {
-        hideProcessScreen(false, `Downloaded ${successCount} of ${checkResult.imageUrls.length} images. ${failureCount} failed.`);
+        hideProcessScreen(false, `Downloaded ${successCount} of ${checkResult.imageUrls.length} images. ${failureCount} failed. Images are organized in product-specific folders.`);
+        // Reset form inputs after download (even with some failures)
+        resetFormAfterDownload();
       }, 2000);
     }
 

@@ -7,6 +7,9 @@ import puppeteer, { Browser } from 'puppeteer';
 let mainWindow: BrowserWindow | null = null;
 process.env.ELECTRON_ENABLE_LOGGING = '1';
 
+// Add a cancellation flag at the top of the file
+let isDownloadCancelled = false;
+
 // Helper function to check if a file exists
 async function fileExists(filePath: string): Promise<boolean> {
   try {
@@ -100,20 +103,36 @@ async function downloadImage(
   imageUrl: ImageUrl,
   domainFolderPath: string
 ): Promise<boolean> {
+  // Check if download has been cancelled
+  if (isDownloadCancelled) {
+    console.log('Download cancelled, stopping image download');
+    return false;
+  }
+
   const { url, productId, suffix } = imageUrl;
   let page = await browser.newPage();
 
   try {
+    // Create product-specific subfolder
+    const productFolderPath = path.join(domainFolderPath, productId);
+    await fs.mkdir(productFolderPath, { recursive: true });
+
     // Generate a unique suffix that doesn't conflict with existing files
     let uniqueSuffix = suffix;
     let counter = 1;
-    let filePath = path.join(domainFolderPath, `${productId}_${uniqueSuffix}.jpg`);
+    let filePath = path.join(productFolderPath, `${productId}_${uniqueSuffix}.jpg`);
 
     // Check if file exists and update suffix until we find a unique name
     while (await fileExists(filePath)) {
       uniqueSuffix = `${suffix}_${counter}`;
-      filePath = path.join(domainFolderPath, `${productId}_${uniqueSuffix}.jpg`);
+      filePath = path.join(productFolderPath, `${productId}_${uniqueSuffix}.jpg`);
       counter++;
+    }
+
+    // Check again if download has been cancelled before starting the download
+    if (isDownloadCancelled) {
+      console.log('Download cancelled, stopping image download');
+      return false;
     }
 
     // Download the image
@@ -129,11 +148,18 @@ async function downloadImage(
       return false;
     }
 
+    // Check one more time if download has been cancelled before saving
+    if (isDownloadCancelled) {
+      console.log('Download cancelled, stopping image download');
+      return false;
+    }
+
     // Save the image
     await fs.writeFile(filePath, buffer);
+    console.log(`Successfully downloaded image for product ${productId} to ${filePath}`);
     return true;
   } catch (error) {
-    console.error(`Error downloading image: ${url}`, error);
+    console.error(`Error downloading image for product ${productId}: ${url}`, error);
     return false;
   } finally {
     await page.close();
@@ -268,6 +294,9 @@ app.whenReady().then(() => {
 
   // Handle image checking process
   ipcMain.handle('check-images', async (event, params: DownloadParams): Promise<{ success: boolean; message: string; imageUrls: ImageUrl[] }> => {
+    // Reset cancellation flag at the start of a new download
+    isDownloadCancelled = false;
+
     const { csvData, sampleUrl, selectedProductIdField } = params;
     const rows = csvData as Record<string, string>[];
     const headers = Object.keys(rows[0] || {});
@@ -382,8 +411,7 @@ app.whenReady().then(() => {
   // Handle download cancellation
   ipcMain.on('cancel-download', () => {
     console.log('Download cancellation requested');
-    // TODO: Implement actual cancellation logic
-    // For now, we'll just let the current process complete
+    isDownloadCancelled = true;
   });
 });
 

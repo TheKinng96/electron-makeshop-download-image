@@ -25,46 +25,6 @@ export interface DownloadParams {
   selectedProductIdField: string
 }
 
-export interface SingleImageParams {
-  domainFolderPath: string;
-  imageUrl: ImageUrl;
-}
-
-export interface DownloadStatus {
-  success: boolean;
-  message: string;
-  progress?: number;
-}
-
-// Store configuration
-export interface StoreConfig {
-  storagePath: string;
-}
-
-// Download parameters
-// export interface DownloadParams {
-//   csvData: string;
-//   sampleUrl: string;
-//   selectedProductIdField: string;
-//   storagePath: string;
-// }
-
-// Image URL information
-export interface ImageUrl {
-  url: string;
-  productId: string;
-  suffix: string;
-}
-
-// Download progress information
-export interface DownloadProgress {
-  progress: number;
-  current: number;
-  total: number;
-  stage: 'checking' | 'downloading';
-  message: string;
-}
-
 // Download status
 export interface DownloadStatus {
   success: boolean;
