@@ -150,35 +150,68 @@ function extractDomainName(url: string): string {
   }
 }
 
-// Function to download a single image with progress tracking
-async function downloadSingleImageWithProgress(
-  imageUrl: ImageUrl,
+// Function to download images in batches with progress tracking
+async function downloadImagesInBatches(
+  imageUrls: ImageUrl[],
   domainFolderPath: string,
-  currentIndex: number,
-  totalImages: number
-): Promise<boolean> {
-  try {
-    // Update progress before downloading
-    const progress = Math.round((currentIndex / totalImages) * 100);
-    const progressBar = document.getElementById('downloadProgressBar') as HTMLProgressElement;
-    const progressText = document.getElementById('progressStatusText') as HTMLDivElement;
+  batchSize: number = 4
+): Promise<{ successCount: number; failureCount: number }> {
+  const totalImages = imageUrls.length;
+  let successCount = 0;
+  let failureCount = 0;
+  let processedCount = 0;
 
-    if (progressBar) progressBar.value = progress;
-    if (progressText) {
-      progressText.textContent = `Downloading images (${currentIndex}/${totalImages})`;
-    }
+  // Create progress elements
+  const progressBar = document.getElementById('downloadProgressBar') as HTMLProgressElement;
+  const progressText = document.getElementById('progressStatusText') as HTMLDivElement;
 
-    // Download the image
-    const result = await window.electronAPI.downloadSingleImage({
-      imageUrl,
-      domainFolderPath,
+  // Initialize progress
+  if (progressBar) progressBar.value = 0;
+  if (progressText) {
+    progressText.textContent = `Starting download of ${totalImages} images...`;
+  }
+
+  // Process images in batches
+  for (let i = 0; i < totalImages; i += batchSize) {
+    const batch = imageUrls.slice(i, i + batchSize);
+    const batchPromises = batch.map(async (imageUrl) => {
+      try {
+        // Download the image
+        const result = await window.electronAPI.downloadSingleImage({
+          imageUrl,
+          domainFolderPath,
+        });
+
+        // Update progress after each image
+        processedCount++;
+        const progress = Math.round((processedCount / totalImages) * 100);
+
+        if (progressBar) progressBar.value = progress;
+        if (progressText) {
+          progressText.textContent = `Downloading images (${processedCount}/${totalImages})`;
+        }
+
+        return result.success;
+      } catch (error) {
+        console.error(`Error downloading image for product ID ${imageUrl.productId}:`, error);
+        return false;
+      }
     });
 
-    return result.success;
-  } catch (error) {
-    console.error(`Error downloading image for product ID ${imageUrl.productId}:`, error);
-    return false;
+    // Wait for all images in the batch to complete
+    const batchResults = await Promise.all(batchPromises);
+
+    // Count successes and failures
+    batchResults.forEach(success => {
+      if (success) {
+        successCount++;
+      } else {
+        failureCount++;
+      }
+    });
   }
+
+  return { successCount, failureCount };
 }
 
 // Handle start button click
@@ -259,47 +292,23 @@ startButton?.addEventListener('click', async () => {
       domainName
     });
 
-    // Second stage: Download images one by one with progress tracking
-    const totalImages = checkResult.imageUrls.length;
-    let successCount = 0;
-    let failureCount = 0;
-
-    // Update progress bar for download stage
-    const progressBar = document.getElementById('downloadProgressBar') as HTMLProgressElement;
-    const progressText = document.getElementById('progressStatusText') as HTMLDivElement;
-
-    if (progressBar) progressBar.value = 0;
-    if (progressText) {
-      progressText.textContent = `Starting download of ${totalImages} images...`;
-    }
-
-    // Download images one by one
-    for (let i = 0; i < totalImages; i++) {
-      const imageUrl = checkResult.imageUrls[i];
-      const success = await downloadSingleImageWithProgress(
-        imageUrl,
-        domainFolderPath,
-        i + 1,
-        totalImages
-      );
-
-      if (success) {
-        successCount++;
-      } else {
-        failureCount++;
-      }
-    }
+    // Second stage: Download images in parallel batches with progress tracking
+    const { successCount, failureCount } = await downloadImagesInBatches(
+      checkResult.imageUrls,
+      domainFolderPath,
+      4 // Process 4 images concurrently
+    );
 
     // Show final status
-    if (successCount === totalImages) {
-      showStatus(`All ${totalImages} images downloaded successfully!`, 'success');
+    if (successCount === checkResult.imageUrls.length) {
+      showStatus(`All ${checkResult.imageUrls.length} images downloaded successfully!`, 'success');
       setTimeout(() => {
-        hideProcessScreen(false, `All ${totalImages} images downloaded successfully!`);
+        hideProcessScreen(false, `All ${checkResult.imageUrls.length} images downloaded successfully!`);
       }, 2000);
     } else {
-      showStatus(`Downloaded ${successCount} of ${totalImages} images. ${failureCount} failed.`, 'success');
+      showStatus(`Downloaded ${successCount} of ${checkResult.imageUrls.length} images. ${failureCount} failed.`, 'success');
       setTimeout(() => {
-        hideProcessScreen(false, `Downloaded ${successCount} of ${totalImages} images. ${failureCount} failed.`);
+        hideProcessScreen(false, `Downloaded ${successCount} of ${checkResult.imageUrls.length} images. ${failureCount} failed.`);
       }, 2000);
     }
 
