@@ -21,11 +21,23 @@ export function showProcessScreen() {
 
   // Set up progress listener
   window.electronAPI.onDownloadProgress((event: any, data: any) => {
-    const { progress, current, total } = data;
-    downloadProgressBar.value = progress;
-    progressStatusText.textContent = `URLをチェック中... ${progress}%`;
-    if (generalStatusDiv) {
-      generalStatusDiv.textContent = `商品のURLをチェック中... ${current} of ${total}`;
+    const { progress, current, total, stage, message } = data;
+
+    if (stage === 'checking') {
+      // For checking stage, use percentage-based progress
+      downloadProgressBar.value = progress;
+      progressStatusText.textContent = `URLをチェック中... ${progress}%`;
+      if (generalStatusDiv) {
+        generalStatusDiv.textContent = `商品のURLをチェック中... ${current} of ${total}`;
+      }
+    } else if (stage === 'downloading') {
+      // For downloading stage, use count-based progress
+      downloadProgressBar.max = total;
+      downloadProgressBar.value = current;
+      progressStatusText.textContent = message || `画像のダウンロード中... ${current}/${total}`;
+      if (generalStatusDiv) {
+        generalStatusDiv.textContent = message || `画像のダウンロード中... ${current}/${total}`;
+      }
     }
   });
 

@@ -146,48 +146,13 @@ async function downloadImage(
     // Save the image
     await fs.writeFile(filePath, buffer);
     console.log(`Successfully downloaded image for product ${productId} to ${filePath}`);
+
     return true;
   } catch (error) {
     console.error(`Error downloading image for product ${productId}: ${url}`, error);
     return false;
   } finally {
     await page.close();
-  }
-}
-
-// Function to process a batch of image URLs
-async function processImageBatch(
-  browser: Browser,
-  imageUrls: ImageUrl[],
-  domainFolderPath: string,
-  startIndex: number,
-  totalImages: number
-): Promise<void> {
-  let processedImages = 0;
-
-  for (const imageUrl of imageUrls) {
-    try {
-      const success = await downloadImage(browser, imageUrl, domainFolderPath);
-
-      if (success) {
-        processedImages++;
-      }
-
-      // Send progress update
-      const progress = Math.round(((startIndex + processedImages) / totalImages) * 100);
-      mainWindow?.webContents.send('download-progress', {
-        progress,
-        current: startIndex + processedImages,
-        total: totalImages,
-        stage: 'downloading',
-        message: `Downloading images (${startIndex + processedImages}/${totalImages})`
-      });
-
-      // Add a small delay to prevent overwhelming the server
-      await new Promise(resolve => setTimeout(resolve, 100));
-    } catch (error) {
-      console.error(`Error processing image for product ID ${imageUrl.productId}:`, error);
-    }
   }
 }
 

@@ -13,6 +13,7 @@ const browseButton = document.getElementById('browseButton') as HTMLButtonElemen
 const shopDomainInput = document.getElementById('shopDomain') as HTMLInputElement;
 const startButton = document.getElementById('startButton') as HTMLButtonElement;
 const statusDiv = document.getElementById('status') as HTMLDivElement;
+const generalStatusDiv = document.getElementById('generalStatus') as HTMLDivElement;
 
 async function setDefaultStoragePath() {
   const defaultPath = await (window as any).electronAPI.getDefaultFolder();
@@ -164,12 +165,19 @@ async function downloadImagesInParallel(
   // Create progress elements
   const progressBar = document.getElementById('downloadProgressBar') as HTMLProgressElement;
   const progressText = document.getElementById('progressStatusText') as HTMLDivElement;
-  const cancelButton = document.getElementById('cancelButton') as HTMLButtonElement;
+  const cancelButton = document.getElementById('cancelProcessButton') as HTMLButtonElement;
 
   // Initialize progress
-  if (progressBar) progressBar.value = 0;
+  if (progressBar) {
+    progressBar.value = 0;
+    progressBar.max = totalImages; // Set max to total number of images
+  }
   if (progressText) {
     progressText.textContent = `${totalImages}の画像をダウンロード中...`;
+  }
+  if (statusDiv) {
+    statusDiv.classList.remove('hidden');
+    statusDiv.textContent = `画像のダウンロードを開始します...`;
   }
 
   // Set up cancellation handler
@@ -181,6 +189,9 @@ async function downloadImagesInParallel(
       // Update UI to show cancellation
       if (progressText) {
         progressText.textContent = 'ダウンロードがキャンセルされました';
+      }
+      if (statusDiv) {
+        statusDiv.textContent = 'ダウンロードがキャンセルされました';
       }
 
       // Set cancelled flag
@@ -206,11 +217,17 @@ async function downloadImagesInParallel(
       if (result.success) {
         successCount++;
         processedCount++;
-        const progress = Math.round((processedCount / totalImages) * 100);
 
-        if (progressBar) progressBar.value = progress;
+        // Simply increment the progress bar value by 1
+        if (progressBar) progressBar.value = processedCount;
+
         if (progressText && !cancelled) {
           progressText.textContent = `画像のダウンロード中 (${processedCount}/${totalImages})`;
+        }
+
+        // Also update the status div if it exists
+        if (statusDiv && !cancelled) {
+          statusDiv.textContent = `画像のダウンロード中... ${processedCount}/${totalImages}`;
         }
       } else {
         failureCount++;
