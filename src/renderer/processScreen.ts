@@ -23,9 +23,9 @@ export function showProcessScreen() {
   window.electronAPI.onDownloadProgress((event: any, data: any) => {
     const { progress, current, total } = data;
     downloadProgressBar.value = progress;
-    progressStatusText.textContent = `Downloading... ${progress}%`;
+    progressStatusText.textContent = `URLをチェック中... ${progress}%`;
     if (generalStatusDiv) {
-      generalStatusDiv.textContent = `Processing product ${current} of ${total}`;
+      generalStatusDiv.textContent = `商品のURLをチェック中... ${current} of ${total}`;
     }
   });
 

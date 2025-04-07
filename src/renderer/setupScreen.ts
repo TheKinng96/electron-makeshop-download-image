@@ -169,7 +169,7 @@ async function downloadImagesInParallel(
   // Initialize progress
   if (progressBar) progressBar.value = 0;
   if (progressText) {
-    progressText.textContent = `Starting download of ${totalImages} images...`;
+    progressText.textContent = `${totalImages}の画像をダウンロード中...`;
   }
 
   // Set up cancellation handler
@@ -180,7 +180,7 @@ async function downloadImagesInParallel(
 
       // Update UI to show cancellation
       if (progressText) {
-        progressText.textContent = 'Download cancelled by user';
+        progressText.textContent = 'ダウンロードがキャンセルされました';
       }
 
       // Set cancelled flag
@@ -202,33 +202,30 @@ async function downloadImagesInParallel(
         domainFolderPath,
       });
 
-      // Update progress after each image
-      processedCount++;
-      const progress = Math.round((processedCount / totalImages) * 100);
+      // Update progress only if the download was successful
+      if (result.success) {
+        successCount++;
+        processedCount++;
+        const progress = Math.round((processedCount / totalImages) * 100);
 
-      if (progressBar) progressBar.value = progress;
-      if (progressText && !cancelled) {
-        progressText.textContent = `Downloading images (${processedCount}/${totalImages})`;
+        if (progressBar) progressBar.value = progress;
+        if (progressText && !cancelled) {
+          progressText.textContent = `画像のダウンロード中 (${processedCount}/${totalImages})`;
+        }
+      } else {
+        failureCount++;
       }
 
       return result.success;
     } catch (error) {
       console.error(`Error downloading image for product ID ${imageUrl.productId}:`, error);
+      failureCount++;
       return false;
     }
   });
 
   // Wait for all downloads to complete or until cancelled
   const results = await Promise.all(downloadPromises);
-
-  // Count successes and failures
-  results.forEach(success => {
-    if (success) {
-      successCount++;
-    } else {
-      failureCount++;
-    }
-  });
 
   return { successCount, failureCount, cancelled };
 }
@@ -268,25 +265,25 @@ startButton?.addEventListener('click', async () => {
 
   // --- Input Validation ---
   if (!csvFile) {
-    showStatus('Please select a CSV file', 'error');
+    showStatus('CSVファイルを選択してください', 'error');
     return;
   }
   if (!selectedProductIdField) {
-    showStatus('Please select a product ID field', 'error');
+    showStatus('商品IDフィールドを選択してください', 'error');
     return;
   }
   if (!storagePath) {
-    showStatus('Please select a storage path', 'error');
+    showStatus('保存先を選択してください', 'error');
     return;
   }
   if (!sampleUrl) {
-    showStatus('Please enter a sample product URL', 'error');
+    showStatus('サンプル商品URLを入力してください', 'error');
     return;
   }
 
   // Validate that the sample URL contains a 12-digit product ID
   if (!/\d{12}/.test(sampleUrl)) {
-    showStatus('Sample URL must contain a 12-digit product ID', 'error');
+    showStatus('サンプル商品URLには12桁の商品IDが必要です', 'error');
     return;
   }
 
@@ -343,31 +340,31 @@ startButton?.addEventListener('click', async () => {
 
     // Show final status
     if (cancelled) {
-      showStatus(`Download cancelled. ${successCount} images downloaded before cancellation.`, 'success');
+      showStatus(`ダウンロードがキャンセルされました。${successCount}の画像をダウンロードしました。`, 'success');
       setTimeout(() => {
-        hideProcessScreen(false, `Download cancelled. ${successCount} images downloaded before cancellation.`);
+        hideProcessScreen(false, `ダウンロードがキャンセルされました。${successCount}の画像をダウンロードしました。`);
         // Reset form inputs after cancellation
         resetFormAfterDownload();
       }, 2000);
     } else if (successCount === checkResult.imageUrls.length) {
-      showStatus(`All ${checkResult.imageUrls.length} images downloaded successfully! Images are organized in product-specific folders.`, 'success');
+      showStatus(`すべての${checkResult.imageUrls.length}の画像をダウンロードしました。商品ごとのフォルダに整理されています。`, 'success');
       setTimeout(() => {
-        hideProcessScreen(false, `All ${checkResult.imageUrls.length} images downloaded successfully! Images are organized in product-specific folders.`);
+        hideProcessScreen(false, `すべての${checkResult.imageUrls.length}の画像をダウンロードしました。商品ごとのフォルダに整理されています。`);
         // Reset form inputs after successful download
         resetFormAfterDownload();
       }, 2000);
     } else {
-      showStatus(`Downloaded ${successCount} of ${checkResult.imageUrls.length} images. ${failureCount} failed. Images are organized in product-specific folders.`, 'success');
+      showStatus(`${successCount}の画像をダウンロードしました。${failureCount}の画像をダウンロードに失敗しました。商品ごとのフォルダに整理されています。`, 'success');
       setTimeout(() => {
-        hideProcessScreen(false, `Downloaded ${successCount} of ${checkResult.imageUrls.length} images. ${failureCount} failed. Images are organized in product-specific folders.`);
+        hideProcessScreen(false, `${successCount}の画像をダウンロードしました。${failureCount}の画像をダウンロードに失敗しました。商品ごとのフォルダに整理されています。`);
         // Reset form inputs after download (even with some failures)
         resetFormAfterDownload();
       }, 2000);
     }
 
   } catch (error) {
-    console.error('Error in download process:', error);
-    showStatus('Error during download process: ' + (error instanceof Error ? error.message : 'Unknown error'), 'error');
-    hideProcessScreen(true, 'Error during download process');
+    console.error('ダウンロードプロセスでエラーが発生しました:', error);
+    showStatus('ダウンロードプロセスでエラーが発生しました: ' + (error instanceof Error ? error.message : '不明なエラー'), 'error');
+    hideProcessScreen(true, 'ダウンロードプロセスでエラーが発生しました');
   }
 });
