@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { StoreConfig, DownloadParams, DownloadStatus, SingleImageParams, ImageUrl } from './types';
+import { DownloadParams, SingleImageParams, ImageUrl } from './types';
 import puppeteer, { Browser } from 'puppeteer';
 
 let mainWindow: BrowserWindow | null = null;
@@ -17,17 +17,6 @@ async function fileExists(filePath: string): Promise<boolean> {
     return true;
   } catch (error) {
     return false;
-  }
-}
-
-// Function to extract domain name from URL
-function extractDomainName(url: string): string {
-  try {
-    const urlObj = new URL(url);
-    return urlObj.hostname;
-  } catch (error) {
-    console.error('Error extracting domain name:', error);
-    return 'unknown-domain';
   }
 }
 
@@ -387,19 +376,36 @@ app.whenReady().then(() => {
         })
       );
 
+      // Deduplicate image URLs - keep only the first occurrence of each URL
+      const uniqueImageUrls: ImageUrl[] = [];
+      const urlMap = new Map<string, boolean>();
+
+      for (const imageUrl of allImageUrls) {
+        if (!urlMap.has(imageUrl.url)) {
+          urlMap.set(imageUrl.url, true);
+          uniqueImageUrls.push(imageUrl);
+        }
+      }
+
+      // Log the number of duplicates removed
+      const duplicateCount = allImageUrls.length - uniqueImageUrls.length;
+      if (duplicateCount > 0) {
+        console.log(`Removed ${duplicateCount} duplicate image URLs`);
+      }
+
       // Send final checking progress update
       mainWindow?.webContents.send('download-progress', {
         progress: 100,
         current: totalProducts,
         total: totalProducts,
         stage: 'checking',
-        message: `Found ${allImageUrls.length} images to download`
+        message: `Found ${uniqueImageUrls.length} unique images to download`
       });
 
       return {
         success: true,
-        message: `Found ${allImageUrls.length} images to download`,
-        imageUrls: allImageUrls
+        message: `Found ${uniqueImageUrls.length} unique images to download`,
+        imageUrls: uniqueImageUrls
       };
 
     } finally {
